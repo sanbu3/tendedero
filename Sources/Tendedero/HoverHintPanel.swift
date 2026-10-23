@@ -1,11 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// A small pull cord under the menu bar. A clothespin climbs a rope toward a
-/// short target line. Three elements only — rope, clip, target — and no text.
-/// The cord hides at once when the pointer leaves or the line is woken.
+/// A short tail of the clothesline, hanging from the menu bar edge. The
+/// clothespin at its end is the handle: pulling the pointer up retracts the
+/// tail into the bar, and when the tail is gone the line drops.
 ///
-/// It never takes a click and never becomes key: it is a sign, not a control.
+/// Only the rope, the clip, and the glow. No text, no target line, no backing.
 @MainActor
 final class HoverHintPanel: NSPanel {
     /// A crisp two-times-resolution white arrow with a black edge: the
@@ -60,7 +60,7 @@ final class HoverHintPanel: NSPanel {
     init() {
         hosting = NSHostingView(rootView: HoverHintView(progress: 0))
         hosting.sizingOptions = []
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 40, height: 140),
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 40, height: 130),
                    styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         isOpaque = false
@@ -79,16 +79,16 @@ final class HoverHintPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    /// Let the cord climb into the menu bar if needed. The default window
-    /// constraint would stop it at the menu bar's lower edge.
+    /// The rail hangs from the menu bar's lower edge, so the window is allowed
+    /// to sit right against it.
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         frameRect
     }
 
-    /// Shows or updates the cord. `progress` runs from 0 at the bottom of the
-    /// hot zone to 1 at the top edge. The content is replaced on every change
-    /// so the peg keeps up with the 30 Hz pointer timer in a non-activating
-    /// panel.
+    /// Shows or updates the tail. `progress` runs from 0 at the bottom of the
+    /// hot zone to 1 at the top edge: the rope gets shorter as it approaches
+    /// the menu bar. The content is replaced on every change so the clip keeps
+    /// up with the 30 Hz pointer timer in a non-activating panel.
     func show(on screen: NSScreen, progress: Double) {
         let clamped = min(1, max(0, progress))
         if abs(clamped - lastProgress) > 0.0005 {
@@ -97,17 +97,17 @@ final class HoverHintPanel: NSPanel {
             hosting.needsDisplay = true
         }
 
-        let size = NSSize(width: 40, height: 140)
+        let size = NSSize(width: 40, height: 130)
         let bar = AppDelegate.menuBarBand(of: screen)
         let target = NSRect(x: screen.frame.midX - size.width / 2,
-                            y: bar.minY - size.height - 6,
+                            y: bar.minY - size.height,
                             width: size.width, height: size.height)
         if frame != target { setFrame(target, display: true) }
 
         guard !isShown else { return }
         isShown = true
         // Set the alpha outright: a window animation can be skipped while the
-        // app is an accessory, which would leave the cord invisible.
+        // app is an accessory, which would leave the tail invisible.
         alphaValue = 1
         orderFrontRegardless()
     }
@@ -124,108 +124,71 @@ private struct HoverHintView: View {
     let progress: Double
 
     var body: some View {
-        ZStack(alignment: .top) {
-            // A very slim frosted backing. It is the contrast layer that keeps
-            // the cord legible over a light browser tab bar or a dark editor,
-            // without becoming a large panel again.
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .frame(width: 22, height: 126)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .stroke(
-                            LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.12)],
-                                           startPoint: .top, endPoint: .bottom),
-                            lineWidth: 0.75)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .stroke(.black.opacity(0.14), lineWidth: 0.5)
-                        .padding(-0.5)
-                )
-                .shadow(color: .black.opacity(0.22), radius: 7, y: 3)
-                .offset(y: 7)
-
-            PullCord(progress: progress)
-                .frame(width: 40, height: 140)
-        }
-        .frame(width: 40, height: 140)
+        PullCord(progress: progress)
+            .frame(width: 40, height: 130)
     }
 }
 
-/// The rope, the target line, and the climbing clothespin.
+/// The whole hint: a rope tail whose length is the remaining pull, the clip
+/// at its end, and a glow that travels with the clip.
 private struct PullCord: View {
     let progress: Double
 
     private var warm: Bool { progress > 0.85 }
 
-    /// Follows the pointer's progress: teal at the bottom, orange at the top.
+    /// The rope starts cool and turns warm as it retracts.
     private var glowColor: Color {
         Color(hue: 0.42 - 0.32 * progress, saturation: 0.8, brightness: 1)
     }
 
-    private var glowAlpha: Double { 0.12 + 0.22 * progress }
+    private var glowAlpha: Double { 0.14 + 0.26 * progress }
 
     var body: some View {
         GeometryReader { geometry in
             let mid = geometry.size.width / 2
-            let top: CGFloat = 14
-            let bottom: CGFloat = 118
-            let pegY = top + (bottom - top) * (1 - CGFloat(progress))
-            let fillPath = Path { path in
-                path.move(to: CGPoint(x: mid, y: bottom))
-                path.addLine(to: CGPoint(x: mid, y: pegY))
+            let maxRope: CGFloat = 112
+            let pinY = maxRope * (1 - CGFloat(progress))
+            let rope = Path { path in
+                path.move(to: CGPoint(x: mid, y: 0))
+                path.addLine(to: CGPoint(x: mid, y: pinY))
             }
 
             ZStack {
-                // A soft light tail along the part of the rope the peg has
-                // already climbed.
-                fillPath
+                // Soft light along the remaining tail.
+                rope
                     .stroke(glowColor.opacity(glowAlpha),
-                            style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                            style: StrokeStyle(lineWidth: 8, lineCap: .round))
                     .blur(radius: 4)
 
-                Capsule()
-                    .fill(Color.primary.opacity(0.16))
-                    .frame(width: 2, height: bottom - top)
-                    .position(x: mid, y: (top + bottom) / 2)
-                    .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
+                // A dark edge keeps the tail readable over light tab bars.
+                rope
+                    .stroke(Color.black.opacity(0.22),
+                            style: StrokeStyle(lineWidth: 5, lineCap: .round))
 
-                fillPath
-                    .stroke(warm ? Color.orange : Color.accentColor,
-                            style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                rope
+                    .stroke(glowColor,
+                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
 
-                // A halo that rides with the peg and changes color as the
-                // pointer climbs.
+                // The halo that rides with the clip.
                 Circle()
                     .fill(
-                        RadialGradient(colors: [glowColor.opacity(0.45), glowColor.opacity(0)],
+                        RadialGradient(colors: [glowColor.opacity(0.5), glowColor.opacity(0)],
                                        center: .center, startRadius: 0, endRadius: 16)
                     )
                     .frame(width: CGFloat(26 + 8 * progress),
                            height: CGFloat(26 + 8 * progress))
-                    .position(x: mid, y: pegY)
+                    .position(x: mid, y: pinY)
                     .blur(radius: 2)
 
-                // The short line at the top is both the clothesline end and
-                // the wake threshold.
-                Capsule()
-                    .fill(warm ? Color.orange : Color.primary.opacity(0.55))
-                    .frame(width: 30, height: 2)
-                    .position(x: mid, y: top)
-                    .shadow(color: .black.opacity(0.24), radius: 1, y: 0.5)
-                    .shadow(color: warm ? Color.orange.opacity(0.7) : glowColor.opacity(0.2),
-                            radius: 3)
-
                 ClothespinMarker(warm: warm)
-                    .position(x: mid, y: pegY)
+                    .position(x: mid, y: pinY)
             }
         }
     }
 }
 
-/// A compact aluminium clip. No extra outline or handle: the slot is enough
-/// to read it as a clothespin at this size.
+/// A compact aluminium clip at the tail's end. The slot is enough to read it
+/// as a clothespin at this size.
 private struct ClothespinMarker: View {
     let warm: Bool
 
