@@ -3,8 +3,9 @@ import SwiftUI
 
 /// A small glass pill under the menu bar. It appears as soon as the pointer
 /// rests at the top center, then follows the pointer upward toward the menu
-/// bar. Its bottom edge carries a progress bar that fills as the pointer
-/// climbs, so the wake threshold is visible before the line appears.
+/// bar. Its right edge carries a tiny clothesline: a clothespin climbs a rope
+/// as the pointer climbs, so the wake threshold is visible as a shape before
+/// the line appears.
 ///
 /// It never takes a click and never becomes key: it is a sign, not a control.
 @MainActor
@@ -17,7 +18,7 @@ final class HoverHintPanel: NSPanel {
     init() {
         hosting = NSHostingView(rootView: HoverHintView(count: 0, progress: 0))
         hosting.sizingOptions = []
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 280, height: 44),
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 308, height: 52),
                    styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         isOpaque = false
@@ -44,8 +45,8 @@ final class HoverHintPanel: NSPanel {
     }
 
     /// Shows, repositions or updates the hint. `progress` runs from 0 at the
-    /// bottom of the hot zone to 1 at the top edge, so the pill and its bar
-    /// rise with the pointer. Cheap to call from the 30 Hz pointer timer.
+    /// bottom of the hot zone to 1 at the top edge, so the pill and its tiny
+    /// clothespin rise with the pointer. Cheap to call from the 30 Hz timer.
     func show(count: Int, on screen: NSScreen, progress: Double) {
         let clamped = min(1, max(0, progress))
         // Replace the content rather than relying on an observed model: the
@@ -58,7 +59,7 @@ final class HoverHintPanel: NSPanel {
             hosting.needsDisplay = true
         }
 
-        let size = NSSize(width: 280, height: 44)
+        let size = NSSize(width: 308, height: 52)
         let bar = AppDelegate.menuBarBand(of: screen)
         // The last stretch lifts the pill toward the menu bar, as if it were
         // being pulled up to wake the line.
@@ -91,36 +92,27 @@ private struct HoverHintView: View {
     let progress: Double
 
     var body: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 8) {
-                Image(systemName: "tshirt")
-                    .font(.system(size: 12, weight: .semibold))
+        HStack(spacing: 8) {
+            Image(systemName: "tshirt")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            if count == 0 {
+                Text(L("Take a screenshot and it will hang here"))
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
-
-                if count == 0 {
-                    Text(L("Take a screenshot and it will hang here"))
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(String(format: L("%d on the line"), count))
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    Text(L("Keep moving up to wake"))
-                        .font(.system(size: 11, weight: .regular, design: .rounded))
-                        .foregroundStyle(.secondary)
-                    Image(systemName: "chevron.up")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .scaleEffect(progress > 0.85 ? 1.18 : 1)
-                }
-            }
-
-            if count > 0 {
-                progressBar
+            } else {
+                Text(String(format: L("%d on the line"), count))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                Text(L("Keep moving up to wake"))
+                    .font(.system(size: 11, weight: .regular, design: .rounded))
+                    .foregroundStyle(.secondary)
+                PullGauge(progress: progress)
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
-        .frame(width: 272, height: 36)
+        .frame(width: 300, height: 44)
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(
             Capsule().stroke(
@@ -131,36 +123,70 @@ private struct HoverHintView: View {
         .overlay(Capsule().stroke(.black.opacity(0.10), lineWidth: 0.5).padding(-0.5))
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
     }
+}
 
-    /// A thin neutral track at the bottom of the pill. It fills with the
-    /// pointer's climb and brightens just before the wake threshold.
-    private var progressBar: some View {
+/// A tiny vertical clothesline. The dim rope is the distance left; the
+/// colored lower part is how far the pointer has climbed. The aluminium peg
+/// is the progress marker, and the little cap at the top is the threshold it
+/// has to reach before the line is woken.
+private struct PullGauge: View {
+    let progress: Double
+
+    private var warm: Bool { progress > 0.85 }
+
+    var body: some View {
         GeometryReader { geometry in
-            let filled = max(0, geometry.size.width * CGFloat(progress))
-            ZStack(alignment: .leading) {
+            let width = geometry.size.width
+            let height = geometry.size.height
+            let mid = width / 2
+            let inset: CGFloat = 4
+            let pegY = inset + (height - inset * 2) * (1 - CGFloat(progress))
+
+            ZStack {
                 Capsule()
                     .fill(Color.primary.opacity(0.16))
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: progress > 0.85
-                                ? [Color.orange.opacity(0.85), Color.orange]
-                                : [Color.accentColor.opacity(0.75), Color.accentColor],
-                            startPoint: .leading, endPoint: .trailing)
-                    )
-                    .frame(width: filled)
-                    .opacity(progress > 0.01 ? 1 : 0)
-                    .shadow(color: (progress > 0.85 ? Color.orange : Color.accentColor).opacity(0.35),
-                            radius: 2)
-                if progress > 0.01 {
-                    Circle()
-                        .fill(Color.white.opacity(0.95))
-                        .frame(width: 4, height: 4)
-                        .offset(x: max(0, filled - 2))
-                        .shadow(color: .white.opacity(0.55), radius: 2)
+                    .frame(width: 3, height: height - inset * 2)
+                    .position(x: mid, y: height / 2)
+
+                Path { path in
+                    path.move(to: CGPoint(x: mid, y: height - inset))
+                    path.addLine(to: CGPoint(x: mid, y: pegY))
                 }
+                .stroke(warm ? Color.orange : Color.accentColor,
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round))
+
+                // The small cap at the top is the wake threshold.
+                Capsule()
+                    .fill(warm ? Color.orange : Color.primary.opacity(0.55))
+                    .frame(width: 12, height: 2)
+                    .position(x: mid, y: inset)
+                    .shadow(color: warm ? Color.orange.opacity(0.65) : .clear, radius: 2)
+
+                MiniClothespin(warm: warm)
+                    .position(x: mid, y: pegY)
             }
         }
-        .frame(height: 4)
+        .frame(width: 18, height: 32)
+    }
+}
+
+private struct MiniClothespin: View {
+    let warm: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+            .fill(LinearGradient(colors: [Color(white: 0.96), Color(white: 0.66)],
+                                 startPoint: .top, endPoint: .bottom))
+            .frame(width: 14, height: 7)
+            .overlay(
+                Capsule()
+                    .fill(Color.black.opacity(0.28))
+                    .frame(width: 8, height: 1)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .stroke(warm ? Color.orange : Color.black.opacity(0.25), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.28), radius: 1, y: 0.5)
     }
 }

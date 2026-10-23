@@ -73,10 +73,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// when the pointer keeps moving up: it must have moved upward since the
     /// hint appeared, then reach the top edge.
     ///
-    /// The pull starts 96 points below the top edge. The old band was barely
-    /// taller than the menu bar, so the bar filled almost at once; a longer
+    /// The pull starts 144 points below the top edge. The old band was barely
+    /// taller than the menu bar, so the gauge filled almost at once; a longer
     /// run makes the threshold a deliberate gesture.
-    private static let topCenterPullHeight: CGFloat = 96
+    private static let topCenterPullHeight: CGFloat = 144
     private static let topCenterWakeBand: CGFloat = 4
     /// A short guard so the hint is visible even on a very fast upward push.
     private static let topCenterMinimumHint: TimeInterval = 0.12
