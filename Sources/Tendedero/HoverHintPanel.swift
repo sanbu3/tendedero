@@ -124,8 +124,32 @@ private struct HoverHintView: View {
     let progress: Double
 
     var body: some View {
-        PullCord(progress: progress)
-            .frame(width: 40, height: 140)
+        ZStack(alignment: .top) {
+            // A very slim frosted backing. It is the contrast layer that keeps
+            // the cord legible over a light browser tab bar or a dark editor,
+            // without becoming a large panel again.
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .frame(width: 22, height: 126)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .stroke(
+                            LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.12)],
+                                           startPoint: .top, endPoint: .bottom),
+                            lineWidth: 0.75)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .stroke(.black.opacity(0.14), lineWidth: 0.5)
+                        .padding(-0.5)
+                )
+                .shadow(color: .black.opacity(0.22), radius: 7, y: 3)
+                .offset(y: 7)
+
+            PullCord(progress: progress)
+                .frame(width: 40, height: 140)
+        }
+        .frame(width: 40, height: 140)
     }
 }
 
@@ -189,6 +213,7 @@ private struct PullCord: View {
                     .fill(warm ? Color.orange : Color.primary.opacity(0.55))
                     .frame(width: 30, height: 2)
                     .position(x: mid, y: top)
+                    .shadow(color: .black.opacity(0.24), radius: 1, y: 0.5)
                     .shadow(color: warm ? Color.orange.opacity(0.7) : glowColor.opacity(0.2),
                             radius: 3)
 
