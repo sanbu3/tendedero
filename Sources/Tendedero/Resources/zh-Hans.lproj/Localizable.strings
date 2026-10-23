@@ -66,8 +66,6 @@
 "Copied" = "已复制";
 
 /* Top center hover and mouse gestures */
-"Hover delay" = "悬停延迟";
-"%.1f seconds" = "%.1f 秒";
 "Mouse" = "鼠标";
 "Click copies" = "单击即复制";
 "Middle click deletes the photo under the pointer" = "中键点按删除指针下的图片";

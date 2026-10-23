@@ -66,8 +66,6 @@
 "Copied" = "복사됨";
 
 /* Top center hover and mouse gestures */
-"Hover delay" = "호버 지연";
-"%.1f seconds" = "%.1f초";
 "Mouse" = "마우스";
 "Click copies" = "클릭하여 복사";
 "Middle click deletes the photo under the pointer" = "가운데 버튼으로 포인터 아래 사진 삭제";

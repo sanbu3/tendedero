@@ -66,8 +66,6 @@
 "Copied" = "コピーしました";
 
 /* Top center hover and mouse gestures */
-"Hover delay" = "ホバー遅延";
-"%.1f seconds" = "%.1f 秒";
 "Mouse" = "マウス";
 "Click copies" = "クリックでコピー";
 "Middle click deletes the photo under the pointer" = "中ボタンでポインタ下の写真を削除";

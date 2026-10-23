@@ -68,8 +68,6 @@
 "Copied" = "Kopyalandı";
 
 /* Top center hover and mouse gestures */
-"Hover delay" = "Hover gecikməsi";
-"%.1f seconds" = "%.1f san";
 "Mouse" = "Siçan";
 "Click copies" = "Klik kopyalayır";
 "Middle click deletes the photo under the pointer" = "Orta düymə göstəricinin altındakı şəkli silir";

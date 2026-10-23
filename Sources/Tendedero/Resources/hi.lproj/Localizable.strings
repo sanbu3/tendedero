@@ -68,8 +68,6 @@
 "Copied" = "कॉपी हो गया";
 
 /* Top center hover and mouse gestures */
-"Hover delay" = "हॉवर विलंब";
-"%.1f seconds" = "%.1f सेकंड";
 "Mouse" = "माउस";
 "Click copies" = "क्लिक करने पर कॉपी होता है";
 "Middle click deletes the photo under the pointer" = "मध्य बटन सूचक के नीचे की तस्वीर हटाता है";

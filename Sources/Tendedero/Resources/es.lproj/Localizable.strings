@@ -66,8 +66,6 @@
 "Copied" = "Copiado";
 
 /* Top center hover and mouse gestures */
-"Hover delay" = "Retardo al pasar el puntero";
-"%.1f seconds" = "%.1f s";
 "Mouse" = "Ratón";
 "Click copies" = "Un clic copia";
 "Middle click deletes the photo under the pointer" = "El clic central elimina la foto bajo el puntero";

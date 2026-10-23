@@ -2,10 +2,9 @@ import AppKit
 import SwiftUI
 
 /// A small glass pill under the menu bar. It appears as soon as the pointer
-/// rests at the top center, then slides upward toward the menu bar while the
-/// hover delay runs. Reaching the top wakes the line; so does letting the
-/// pill finish its climb. The upward motion is the affordance: keep pushing
-/// up, and the line comes down.
+/// rests at the top center, then follows the pointer upward toward the menu
+/// bar. It never brings the line down by itself: only a further upward push
+/// to the top edge does that. The upward motion is the affordance.
 ///
 /// It never takes a click and never becomes key: it is a sign, not a control.
 @MainActor
@@ -43,9 +42,9 @@ final class HoverHintPanel: NSPanel {
         frameRect
     }
 
-    /// Shows, repositions or updates the hint. `progress` runs from 0 to 1
-    /// over the hover delay and lifts the pill toward the menu bar. Cheap to
-    /// call from the 30 Hz pointer timer: the window just moves.
+    /// Shows, repositions or updates the hint. `progress` runs from 0 at the
+    /// bottom of the hot zone to 1 at the top edge, so the pill rises with
+    /// the pointer. Cheap to call from the 30 Hz pointer timer.
     func show(count: Int, on screen: NSScreen, progress: Double) {
         if count != shownCount {
             shownCount = count
@@ -53,9 +52,9 @@ final class HoverHintPanel: NSPanel {
         }
         let size = NSSize(width: 280, height: 44)
         let bar = AppDelegate.menuBarBand(of: screen)
-        // The last stretch lifts the pill into the menu bar, as if it were
+        // The last stretch lifts the pill toward the menu bar, as if it were
         // being pulled up to wake the line.
-        let lift = CGFloat(min(1, max(0, progress))) * 22
+        let lift = CGFloat(min(1, max(0, progress))) * 16
         let target = NSRect(x: screen.frame.midX - size.width / 2,
                             y: bar.minY - size.height - 6 + lift,
                             width: size.width, height: size.height)

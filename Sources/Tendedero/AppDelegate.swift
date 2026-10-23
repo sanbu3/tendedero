@@ -39,6 +39,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var peekUntil = Date.distantPast
     /// When the pointer first entered the top center hot zone.
     private var topCenterSince: Date?
+    /// Whether the pointer has moved upward since the hint appeared. This is
+    /// the gesture that wakes the line.
+    private var topCenterMovedUp = false
+    /// Last pointer height, so entering the zone from below counts as moving
+    /// up even when it happens between two timer ticks.
+    private var previousMouseY: CGFloat?
     /// After a click in the menu bar the line stays up there hidden until the
     /// pointer leaves the menu bar, so it does not come back over a menu.
     private var menuBarSuppressed = false
@@ -63,22 +69,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         set { UserDefaults.standard.set(!newValue, forKey: "topCenterRevealOff") }
     }
 
-    /// How long the hint stays before the line comes down.
-    static let topCenterDelayChoices: [TimeInterval] = [0.2, 0.5, 0.9, 1.4]
-
-    static var topCenterDelay: TimeInterval {
-        get {
-            let saved = UserDefaults.standard.double(forKey: "topCenterDelay")
-            return topCenterDelayChoices.contains(where: { abs($0 - saved) < 0.01 }) ? saved : 0.5
-        }
-        set { UserDefaults.standard.set(newValue, forKey: "topCenterDelay") }
-    }
-
-    /// Pushing the pointer to the very top wakes the line as soon as the
-    /// hint has had a moment to appear. Resting a little lower lets the hint
-    /// finish its own upward climb instead.
-    private static let topCenterWakeDelay: TimeInterval = 0.2
+    /// Entering the top center only shows the hint. The line comes down only
+    /// when the pointer keeps moving up: it must have moved upward since the
+    /// hint appeared, then reach the top edge.
     private static let topCenterWakeBand: CGFloat = 4
+    /// A short guard so the hint is visible even on a very fast upward push.
+    private static let topCenterMinimumHint: TimeInterval = 0.12
 
     /// Something new hanging shows itself for a moment. Off, it hangs
     /// quietly and waits for you to bring the line down.
@@ -501,8 +497,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let p = NSEvent.mouseLocation
                 guard NSScreen.screens.contains(where: { NSMouseInRect(p, Self.menuBarBand(of: $0), false) }) else { return }
                 self.menuBarSuppressed = true
-                self.topCenterSince = nil
-                self.hideHint()
+                self.resetTopCenterHint()
                 if self.isRevealed {
                     self.pinned = false
                     self.setRevealed(false)
@@ -523,12 +518,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let mouse = NSEvent.mouseLocation
         let now = Date()
 
+        let previousY = previousMouseY
+        previousMouseY = mouse.y
         let screenUnderPointer = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
         let inMenuBar = screenUnderPointer.map { NSMouseInRect(mouse, Self.menuBarBand(of: $0), false) } ?? false
         if !inMenuBar { menuBarSuppressed = false }
 
         guard isRevealed else {
-            updateTopCenterHint(mouse: mouse, screen: screenUnderPointer, now: now)
+            updateTopCenterHint(mouse: mouse, screen: screenUnderPointer, now: now, previousY: previousY)
             return
         }
 
@@ -556,34 +553,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// The pointer resting at the top center first shows a hint, then brings
-    /// the line down after the hover delay. It replaces the old whole-menu-bar
-    /// trigger, so reaching for the Apple menu or a status icon no longer
-    /// drops the line.
-    private func updateTopCenterHint(mouse: NSPoint, screen: NSScreen?, now: Date) {
+    /// The pointer resting at the top center only shows the hint. The hint
+    /// follows the pointer upward, and the line is woken only when the
+    /// pointer reaches the top edge after climbing from where it entered.
+    private func updateTopCenterHint(mouse: NSPoint, screen: NSScreen?, now: Date, previousY: CGFloat?) {
         guard Self.opensFromTopCenter, let screen,
               NSMouseInRect(mouse, Self.topCenterZone(of: screen), false),
               !menuBarSuppressed,
               !FullScreen.blocksLine(on: screen) else {
-            topCenterSince = nil
-            hideHint()
+            resetTopCenterHint()
             return
         }
 
-        let since = topCenterSince ?? now
-        topCenterSince = since
-        let elapsed = now.timeIntervalSince(since)
-        let progress = line.liveCount > 0 ? min(1, elapsed / Self.topCenterDelay) : 0
-        hintPanel.show(count: line.liveCount, on: screen, progress: progress)
+        if topCenterSince == nil {
+            topCenterSince = now
+            topCenterMovedUp = false
+        }
+        guard let since = topCenterSince else { return }
+        if let previousY, mouse.y > previousY + 0.5 { topCenterMovedUp = true }
+        let zone = Self.topCenterZone(of: screen)
+        // 0 at the bottom of the hot zone, 1 at the top edge. The hint rises
+        // with the pointer rather than with a timer.
+        let progress = min(1, max(0, (mouse.y - zone.minY) / max(1, zone.height)))
+        hintPanel.show(count: line.liveCount, on: screen, progress: Double(progress))
 
-        guard line.liveCount > 0 else { return }
-        // Let the hint begin its climb; then either wait for it to finish or
-        // wake at once when the pointer is pressed against the top edge.
-        let atTop = mouse.y >= screen.frame.maxY - Self.topCenterWakeBand
-        let woke = atTop && elapsed >= Self.topCenterWakeDelay
-        guard woke || elapsed >= Self.topCenterDelay else { return }
-        topCenterSince = nil
-        hideHint()
+        guard line.liveCount > 0,
+              mouse.y >= screen.frame.maxY - Self.topCenterWakeBand,
+              topCenterMovedUp,
+              now.timeIntervalSince(since) >= Self.topCenterMinimumHint else { return }
+
+        resetTopCenterHint()
         if panel.screen != screen {
             panel.placeOnScreen(screen)
             updateCapacity()
@@ -591,6 +590,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         wanted = true
         refresh()
         reveal()
+    }
+
+    private func resetTopCenterHint() {
+        topCenterSince = nil
+        topCenterMovedUp = false
+        hideHint()
     }
 
     private func hideHint() {
@@ -752,17 +757,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         hover.state = Self.opensFromTopCenter ? .on : .off
         options.addItem(hover)
-        let delayItem = NSMenuItem(title: L("Hover delay"), action: nil, keyEquivalent: "")
-        let delays = NSMenu()
-        for delay in Self.topCenterDelayChoices {
-            let item = ClosureMenuItem(String(format: L("%.1f seconds"), delay)) {
-                AppDelegate.topCenterDelay = delay
-            }
-            item.state = abs(Self.topCenterDelay - delay) < 0.01 ? .on : .off
-            delays.addItem(item)
-        }
-        delayItem.submenu = delays
-        options.addItem(delayItem)
         let peek = ClosureMenuItem(L("When something new hangs")) {
             AppDelegate.peeksAtNew.toggle()
         }
