@@ -1,16 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// The small values the hint view draws. The panel owns one and updates it
-/// from the 30 Hz pointer timer, so the progress bar can animate smoothly
-/// without rebuilding the SwiftUI root view on every tick.
-@MainActor
-final class HoverHintModel: ObservableObject {
-    @Published var count = 0
-    /// 0 at the bottom of the hot zone, 1 at the top edge.
-    @Published var progress: Double = 0
-}
-
 /// A small glass pill under the menu bar. It appears as soon as the pointer
 /// rests at the top center, then follows the pointer upward toward the menu
 /// bar. Its bottom edge carries a progress bar that fills as the pointer
@@ -19,14 +9,13 @@ final class HoverHintModel: ObservableObject {
 /// It never takes a click and never becomes key: it is a sign, not a control.
 @MainActor
 final class HoverHintPanel: NSPanel {
-    private let model: HoverHintModel
     private let hosting: NSHostingView<HoverHintView>
+    private var lastCount = -1
+    private var lastProgress = -1.0
     private var isShown = false
 
     init() {
-        let model = HoverHintModel()
-        self.model = model
-        self.hosting = NSHostingView(rootView: HoverHintView(model: model))
+        hosting = NSHostingView(rootView: HoverHintView(count: 0, progress: 0))
         hosting.sizingOptions = []
         super.init(contentRect: NSRect(x: 0, y: 0, width: 280, height: 44),
                    styleMask: [.borderless, .nonactivatingPanel],
@@ -58,9 +47,16 @@ final class HoverHintPanel: NSPanel {
     /// bottom of the hot zone to 1 at the top edge, so the pill and its bar
     /// rise with the pointer. Cheap to call from the 30 Hz pointer timer.
     func show(count: Int, on screen: NSScreen, progress: Double) {
-        if model.count != count { model.count = count }
         let clamped = min(1, max(0, progress))
-        if abs(model.progress - clamped) > 0.001 { model.progress = clamped }
+        // Replace the content rather than relying on an observed model: the
+        // hint lives in a non-activating panel, and this is what keeps the
+        // progress fill moving with every 30 Hz pointer update.
+        if count != lastCount || abs(clamped - lastProgress) > 0.0005 {
+            lastCount = count
+            lastProgress = clamped
+            hosting.rootView = HoverHintView(count: count, progress: clamped)
+            hosting.needsDisplay = true
+        }
 
         let size = NSSize(width: 280, height: 44)
         let bar = AppDelegate.menuBarBand(of: screen)
@@ -91,7 +87,8 @@ final class HoverHintPanel: NSPanel {
 }
 
 private struct HoverHintView: View {
-    @ObservedObject var model: HoverHintModel
+    let count: Int
+    let progress: Double
 
     var body: some View {
         VStack(spacing: 4) {
@@ -100,12 +97,12 @@ private struct HoverHintView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
 
-                if model.count == 0 {
+                if count == 0 {
                     Text(L("Take a screenshot and it will hang here"))
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                 } else {
-                    Text(String(format: L("%d on the line"), model.count))
+                    Text(String(format: L("%d on the line"), count))
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
                     Text(L("Keep moving up to wake"))
                         .font(.system(size: 11, weight: .regular, design: .rounded))
@@ -113,12 +110,11 @@ private struct HoverHintView: View {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(.secondary)
-                        .scaleEffect(model.progress > 0.85 ? 1.18 : 1)
-                        .animation(.easeOut(duration: 0.15), value: model.progress > 0.85)
+                        .scaleEffect(progress > 0.85 ? 1.18 : 1)
                 }
             }
 
-            if model.count > 0 {
+            if count > 0 {
                 progressBar
             }
         }
@@ -140,18 +136,31 @@ private struct HoverHintView: View {
     /// pointer's climb and brightens just before the wake threshold.
     private var progressBar: some View {
         GeometryReader { geometry in
+            let filled = max(0, geometry.size.width * CGFloat(progress))
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.primary.opacity(0.12))
+                    .fill(Color.primary.opacity(0.16))
                 Capsule()
-                    .fill(Color.primary.opacity(model.progress > 0.85 ? 0.9 : 0.68))
-                    .frame(width: max(0, geometry.size.width * CGFloat(model.progress)))
-                    .opacity(model.progress > 0.01 ? 1 : 0)
-                    .shadow(color: Color.primary.opacity(model.progress > 0.85 ? 0.35 : 0.12),
+                    .fill(
+                        LinearGradient(
+                            colors: progress > 0.85
+                                ? [Color.orange.opacity(0.85), Color.orange]
+                                : [Color.accentColor.opacity(0.75), Color.accentColor],
+                            startPoint: .leading, endPoint: .trailing)
+                    )
+                    .frame(width: filled)
+                    .opacity(progress > 0.01 ? 1 : 0)
+                    .shadow(color: (progress > 0.85 ? Color.orange : Color.accentColor).opacity(0.35),
                             radius: 2)
+                if progress > 0.01 {
+                    Circle()
+                        .fill(Color.white.opacity(0.95))
+                        .frame(width: 4, height: 4)
+                        .offset(x: max(0, filled - 2))
+                        .shadow(color: .white.opacity(0.55), radius: 2)
+                }
             }
-            .animation(.easeOut(duration: 0.08), value: model.progress)
         }
-        .frame(height: 3)
+        .frame(height: 4)
     }
 }
