@@ -44,6 +44,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var topCenterMovedUp = false
     /// Whether the custom pull-up cursor is on the cursor stack.
     private var pullCursorPushed = false
+    /// A short snap/flash is playing at the wake threshold.
+    private var snapping = false
+    private var snapStartedAt: Date?
+    private var snapScreen: NSScreen?
     /// Last pointer height, so entering the zone from below counts as moving
     /// up even when it happens between two timer ticks.
     private var previousMouseY: CGFloat?
@@ -82,6 +86,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let topCenterWakeBand: CGFloat = 4
     /// A short guard so the hint is visible even on a very fast upward push.
     private static let topCenterMinimumHint: TimeInterval = 0.12
+    /// The little twang and flash after the line goes taut.
+    private static let snapDuration: TimeInterval = 0.18
 
     /// Something new hanging shows itself for a moment. Off, it hangs
     /// quietly and waits for you to bring the line down.
@@ -528,6 +534,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let previousY = previousMouseY
         previousMouseY = mouse.y
+        if snapping {
+            updateSnap(now)
+            return
+        }
         let screenUnderPointer = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
         let inMenuBar = screenUnderPointer.map { NSMouseInRect(mouse, Self.menuBarBand(of: $0), false) } ?? false
         if !inMenuBar { menuBarSuppressed = false }
@@ -593,7 +603,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
               topCenterMovedUp,
               now.timeIntervalSince(since) >= Self.topCenterMinimumHint else { return }
 
-        resetTopCenterHint()
+        // The line is taut. Let it twang and flash for a moment before the
+        // main line actually drops.
+        snapping = true
+        snapStartedAt = now
+        snapScreen = screen
+        topCenterSince = nil
+        topCenterMovedUp = false
+        hintPanel.show(on: screen, progress: 1, snap: 0)
+    }
+
+    private func updateSnap(_ now: Date) {
+        guard let start = snapStartedAt, let screen = snapScreen else {
+            snapping = false
+            return
+        }
+        let phase = min(1, now.timeIntervalSince(start) / Self.snapDuration)
+        hintPanel.show(on: screen, progress: 1, snap: phase)
+        if pullCursorPushed { HoverHintPanel.pullCursor.set() }
+        guard phase >= 1 else { return }
+        snapping = false
+        snapStartedAt = nil
+        snapScreen = nil
+        topCenterSince = nil
+        topCenterMovedUp = false
+        hideHint()
         if panel.screen != screen {
             panel.placeOnScreen(screen)
             updateCapacity()
@@ -604,6 +638,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func resetTopCenterHint() {
+        snapping = false
+        snapStartedAt = nil
+        snapScreen = nil
         topCenterSince = nil
         topCenterMovedUp = false
         hideHint()

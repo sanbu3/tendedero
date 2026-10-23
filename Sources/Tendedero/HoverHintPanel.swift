@@ -55,10 +55,11 @@ final class HoverHintPanel: NSPanel {
 
     private let hosting: NSHostingView<HoverHintView>
     private var lastProgress = -1.0
+    private var lastSnap = -1.0
     private var isShown = false
 
     init() {
-        hosting = NSHostingView(rootView: HoverHintView(progress: 0))
+        hosting = NSHostingView(rootView: HoverHintView(progress: 0, snap: 0))
         hosting.sizingOptions = []
         super.init(contentRect: NSRect(x: 0, y: 0, width: 88, height: 64),
                    styleMask: [.borderless, .nonactivatingPanel],
@@ -88,11 +89,13 @@ final class HoverHintPanel: NSPanel {
     /// bottom of the hot zone to 1 at the top edge; the sag disappears as the
     /// pointer climbs. The content is replaced on every change so the clip
     /// keeps up with the 30 Hz pointer timer in a non-activating panel.
-    func show(on screen: NSScreen, progress: Double) {
+    func show(on screen: NSScreen, progress: Double, snap: Double = 0) {
         let clamped = min(1, max(0, progress))
-        if abs(clamped - lastProgress) > 0.0005 {
+        let snapPhase = min(1, max(0, snap))
+        if abs(clamped - lastProgress) > 0.0005 || abs(snapPhase - lastSnap) > 0.0005 {
             lastProgress = clamped
-            hosting.rootView = HoverHintView(progress: clamped)
+            lastSnap = snapPhase
+            hosting.rootView = HoverHintView(progress: clamped, snap: snapPhase)
             hosting.needsDisplay = true
         }
 
@@ -121,9 +124,10 @@ final class HoverHintPanel: NSPanel {
 
 private struct HoverHintView: View {
     let progress: Double
+    let snap: Double
 
     var body: some View {
-        MiniLine(progress: progress)
+        MiniLine(progress: progress, snap: snap)
             .frame(width: 88, height: 64)
     }
 }
@@ -132,6 +136,7 @@ private struct HoverHintView: View {
 /// clothespin at the lowest point. The sag is the remaining pull.
 private struct MiniLine: View {
     let progress: Double
+    let snap: Double
 
     private var warm: Bool { progress > 0.85 }
 
@@ -147,7 +152,11 @@ private struct MiniLine: View {
             let mid = geometry.size.width / 2
             let left: CGFloat = 12
             let right = geometry.size.width - 12
-            let sag = CGFloat(1 - progress) * 34
+            let baseSag = CGFloat(1 - progress) * 34
+            // A very short, decaying twang when the line snaps taut. It only
+            // bows downward; the upward half is hidden by the menu bar.
+            let twang = CGFloat(sin(snap * .pi * 3) * 4 * (1 - snap))
+            let sag = max(0, baseSag + twang)
             let pin = CGPoint(x: mid, y: sag)
             let rope = Path { path in
                 path.move(to: CGPoint(x: left, y: 0))
@@ -184,6 +193,24 @@ private struct MiniLine: View {
 
                 ClothespinMarker(warm: warm)
                     .position(pin)
+
+                // The "snap": one warm ring and a small white flash at the
+                // clip as the line goes taut.
+                if snap > 0 {
+                    let flash = max(0, sin(snap * .pi))
+                    Circle()
+                        .stroke(glowColor.opacity(flash), lineWidth: 1.5)
+                        .frame(width: CGFloat(8 + 30 * snap),
+                               height: CGFloat(8 + 30 * snap))
+                        .position(pin)
+                        .blur(radius: 1)
+                    Circle()
+                        .fill(Color.white.opacity(flash * 0.7))
+                        .frame(width: CGFloat(6 + 10 * snap),
+                               height: CGFloat(6 + 10 * snap))
+                        .position(pin)
+                        .blur(radius: 1)
+                }
             }
         }
     }
