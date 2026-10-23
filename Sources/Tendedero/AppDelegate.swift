@@ -72,6 +72,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Entering the top center only shows the hint. The line comes down only
     /// when the pointer keeps moving up: it must have moved upward since the
     /// hint appeared, then reach the top edge.
+    ///
+    /// The pull starts 96 points below the top edge. The old band was barely
+    /// taller than the menu bar, so the bar filled almost at once; a longer
+    /// run makes the threshold a deliberate gesture.
+    private static let topCenterPullHeight: CGFloat = 96
     private static let topCenterWakeBand: CGFloat = 4
     /// A short guard so the hint is visible even on a very fast upward push.
     private static let topCenterMinimumHint: TimeInterval = 0.12
@@ -485,8 +490,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static func topCenterZone(of screen: NSScreen) -> NSRect {
         let bar = menuBarBand(of: screen)
         let width = min(320, max(180, screen.frame.width * 0.22))
-        return NSRect(x: screen.frame.midX - width / 2, y: bar.minY - 8,
-                      width: width, height: bar.height + 8)
+        let height = max(Self.topCenterPullHeight, bar.height + 8)
+        return NSRect(x: screen.frame.midX - width / 2, y: screen.frame.maxY - height,
+                      width: width, height: height)
     }
 
     /// A click anywhere in the top bar of any screen, a menu or an icon, puts the line away.

@@ -152,6 +152,6 @@ private struct HoverHintView: View {
             }
             .animation(.easeOut(duration: 0.08), value: model.progress)
         }
-        .frame(height: 2.5)
+        .frame(height: 3)
     }
 }
