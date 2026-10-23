@@ -37,7 +37,7 @@
 "Medium" = "Mediano";
 "Large" = "Grande";
 "Bring the line down" = "Baixar a corda";
-"When the pointer rests in the menu bar" = "Ao deixar o punteiro na barra de menús";
+"When the pointer rests at the top center" = "Cando o punteiro repousa no centro superior";
 "When something new hangs" = "Cando se pendura algo novo";
 "Over full screen apps" = "Sobre apps a pantalla completa";
 "Hang copied images" = "Pendurar imaxes copiadas";
@@ -64,3 +64,15 @@
 
 /* PeggedView */
 "Copied" = "Copiado";
+
+/* Top center hover and mouse gestures */
+"Hover delay" = "Atraso ao pasar o punteiro";
+"%.1f seconds" = "%.1f s";
+"Mouse" = "Rato";
+"Click copies" = "Un clic copia";
+"Middle click deletes the photo under the pointer" = "O clic central elimina a foto baixo o punteiro";
+"Double-click copies. Right-click keeps the menu." = "Doble clic copia. O clic dereito mantén o menú.";
+"Delete hovered photo" = "Eliminar a foto baixo o punteiro";
+"Change Delete Shortcut…" = "Cambiar o atallo de eliminación…";
+"Change Delete Shortcut" = "Cambiar o atallo de eliminación";
+"Pull down the line" = "Baixar a liña";

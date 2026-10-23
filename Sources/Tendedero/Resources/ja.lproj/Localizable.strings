@@ -37,7 +37,7 @@
 "Medium" = "中";
 "Large" = "大";
 "Bring the line down" = "ロープを降ろす";
-"When the pointer rests in the menu bar" = "ポインタがメニューバーにとどまったとき";
+"When the pointer rests at the top center" = "ポインタを上部中央に置いたとき";
 "When something new hangs" = "新しいものが吊るされたとき";
 "Over full screen apps" = "フルスクリーンのアプリの上にも";
 "Hang copied images" = "コピーした画像を吊るす";
@@ -64,3 +64,15 @@
 
 /* PeggedView */
 "Copied" = "コピーしました";
+
+/* Top center hover and mouse gestures */
+"Hover delay" = "ホバー遅延";
+"%.1f seconds" = "%.1f 秒";
+"Mouse" = "マウス";
+"Click copies" = "クリックでコピー";
+"Middle click deletes the photo under the pointer" = "中ボタンでポインタ下の写真を削除";
+"Double-click copies. Right-click keeps the menu." = "ダブルクリックでコピー。右クリックは元のメニュー。";
+"Delete hovered photo" = "ポインタ下の写真を削除";
+"Change Delete Shortcut…" = "削除ショートカットを変更…";
+"Change Delete Shortcut" = "削除ショートカットを変更";
+"Pull down the line" = "ラインを引き下ろす";

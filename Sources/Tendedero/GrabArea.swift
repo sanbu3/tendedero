@@ -9,8 +9,9 @@ import SwiftUI
 /// - The Trash discards it.
 /// - Nowhere that accepts it: the photo flies back to the line.
 ///
-/// Click copies, double click opens, press and hold opens Markup, the corner
-/// cross discards.
+/// Double click copies, press and hold opens Markup, the corner cross
+/// discards, middle click deletes, right click keeps the original menu.
+/// Single click copies only when that option is turned on.
 struct GrabArea: NSViewRepresentable {
     let item: Pegged
     let line: Line
@@ -31,14 +32,15 @@ struct GrabArea: NSViewRepresentable {
         let isRecording = item.isRecording
         view.url = item.url
         view.dragImage = item.thumb
-        view.onClick = { line.copy(id) }
-        view.onDoubleClick = { line.open(id) }
+        view.onClick = { if line.clickCopies { line.copy(id) } }
+        view.onDoubleClick = { line.copy(id) }
         view.onDragStart = { line.draggingID = id }
         view.onDragEnd = {
             line.draggingID = nil
             // Moved into a folder: it is saved where you wanted it.
             line.prune()
         }
+        view.onQuickDelete = { line.discard(id) }
         view.onTrash = { line.trash(id) }
         view.onDiscard = { line.discard(id) }
         view.onLongPress = { line.markup(id) }
@@ -88,6 +90,7 @@ final class GrabView: NSView, NSDraggingSource {
     var onDoubleClick: () -> Void = {}
     var onDragStart: () -> Void = {}
     var onDragEnd: () -> Void = {}
+    var onQuickDelete: () -> Void = {}
     var onTrash: () -> Void = {}
     var onDiscard: () -> Void = {}
     var onLongPress: () -> Void = {}
@@ -99,9 +102,6 @@ final class GrabView: NSView, NSDraggingSource {
     private var startedDrag = false
     private var holdTimer: Timer?
     private var didLongPress = false
-    /// A click copies only once it is clear it is not the first half of a
-    /// double click, which opens the photo and must leave the clipboard alone.
-    private var clickTimer: Timer?
 
     /// How long you hold before Markup opens. Long enough not to fire on a
     /// slow click, short enough to feel deliberate.
@@ -121,10 +121,6 @@ final class GrabView: NSView, NSDraggingSource {
     }
 
     override func mouseDown(with event: NSEvent) {
-        if event.clickCount > 1 {
-            clickTimer?.invalidate()
-            clickTimer = nil
-        }
         if isInCross(event) {
             downPoint = nil
             onDiscard()
@@ -184,22 +180,21 @@ final class GrabView: NSView, NSDraggingSource {
     override func mouseUp(with event: NSEvent) {
         endPress()
         if downPoint != nil && !startedDrag && !didLongPress && event.clickCount == 1 {
-            // Waits as long as the system lets a second click count as a double click.
-            clickTimer?.invalidate()
-            // The copy goes ahead even if the line redraws this view meanwhile.
-            let copy = onClick
-            let timer = Timer(timeInterval: NSEvent.doubleClickInterval, repeats: false) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.clickTimer = nil
-                    copy()
-                }
-            }
-            // Keeps time while a menu or a drag runs the loop in another mode.
-            RunLoop.main.add(timer, forMode: .common)
-            clickTimer = timer
+            onClick()
         }
         downPoint = nil
         didLongPress = false
+    }
+
+    /// The middle button deletes the photo under the pointer. It never starts
+    /// a drag or a long press, so it is the fastest way to clear one card.
+    override func otherMouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 2 else {
+            super.otherMouseDown(with: event)
+            return
+        }
+        downPoint = nil
+        onQuickDelete()
     }
 
     override func rightMouseDown(with event: NSEvent) {

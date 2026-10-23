@@ -39,7 +39,7 @@
 "Medium" = "मध्यम";
 "Large" = "बड़ा";
 "Bring the line down" = "रस्सी नीचे लाएँ";
-"When the pointer rests in the menu bar" = "जब पॉइंटर मेनू बार में रुके";
+"When the pointer rests at the top center" = "जब सूचक ऊपर के मध्य में रुके";
 "When something new hangs" = "जब कुछ नया टँगे";
 "Over full screen apps" = "फ़ुल स्क्रीन ऐप्स के ऊपर";
 "Hang copied images" = "कॉपी की गई तस्वीरें टाँगें";
@@ -66,3 +66,15 @@
 
 /* PeggedView */
 "Copied" = "कॉपी हो गया";
+
+/* Top center hover and mouse gestures */
+"Hover delay" = "हॉवर विलंब";
+"%.1f seconds" = "%.1f सेकंड";
+"Mouse" = "माउस";
+"Click copies" = "क्लिक करने पर कॉपी होता है";
+"Middle click deletes the photo under the pointer" = "मध्य बटन सूचक के नीचे की तस्वीर हटाता है";
+"Double-click copies. Right-click keeps the menu." = "डबल-क्लिक कॉपी करता है। राइट-क्लिक मूल मेनू रखता है।";
+"Delete hovered photo" = "सूचक के नीचे की तस्वीर हटाएँ";
+"Change Delete Shortcut…" = "हटाने का शॉर्टकट बदलें…";
+"Change Delete Shortcut" = "हटाने का शॉर्टकट बदलें";
+"Pull down the line" = "लाइन नीचे खींचें";

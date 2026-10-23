@@ -37,7 +37,7 @@
 "Medium" = "中";
 "Large" = "大";
 "Bring the line down" = "放下晾衣绳";
-"When the pointer rests in the menu bar" = "指针停在菜单栏时";
+"When the pointer rests at the top center" = "指针停在顶部正中间时";
 "When something new hangs" = "有新内容挂上时";
 "Over full screen apps" = "在全屏 App 上";
 "Hang copied images" = "挂上复制的图片";
@@ -64,3 +64,15 @@
 
 /* PeggedView */
 "Copied" = "已复制";
+
+/* Top center hover and mouse gestures */
+"Hover delay" = "悬停延迟";
+"%.1f seconds" = "%.1f 秒";
+"Mouse" = "鼠标";
+"Click copies" = "单击即复制";
+"Middle click deletes the photo under the pointer" = "中键点按删除指针下的图片";
+"Double-click copies. Right-click keeps the menu." = "双击复制，右键仍为原生菜单。";
+"Delete hovered photo" = "删除悬停的图片";
+"Change Delete Shortcut…" = "更改删除快捷键…";
+"Change Delete Shortcut" = "更改删除快捷键";
+"Pull down the line" = "下拉晾衣绳";

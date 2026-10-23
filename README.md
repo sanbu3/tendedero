@@ -1,3 +1,5 @@
+> **Fork note:** this checkout adds a top-center hover trigger, a hint bubble, middle-click delete and double-click copy. See [README-DEV.md](README-DEV.md).
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
   <img src="docs/images/hero-light.png" alt="Tendedero. Screenshots, hung out to dry. Three screenshots in glass frames hang from a thin line under the macOS menu bar.">

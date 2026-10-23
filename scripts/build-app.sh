@@ -5,8 +5,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONFIG="${1:-release}"
-APP="build/Tendedero.app"
-VERSION="1.6.0"
+# The official app keeps its name and identifier. A development build can
+# pass different values, so both can be installed and opened at once.
+APP_NAME="${APP_NAME:-Tendedero}"
+BUNDLE_ID="${BUNDLE_ID:-app.tendedero.Tendedero}"
+VERSION="${VERSION:-1.6.0}"
+BUNDLE_VERSION="${BUNDLE_VERSION:-7}"
+APP="${APP_PATH:-build/$APP_NAME.app}"
 
 # Builds one architecture and prints the binary's path.
 # The Command Line Tools for macOS 27 ship an SDK whose SwiftUI needs a macro
@@ -61,25 +66,25 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Tendedero</string>
-  <key>CFBundleDisplayName</key><string>Tendedero</string>
-  <key>CFBundleIdentifier</key><string>app.tendedero.Tendedero</string>
+  <key>CFBundleName</key><string>${APP_NAME}</string>
+  <key>CFBundleDisplayName</key><string>${APP_NAME}</string>
+  <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
   <key>CFBundleExecutable</key><string>Tendedero</string>
   <key>CFBundleIconFile</key><string>Tendedero</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>7</string>
+  <key>CFBundleVersion</key><string>${BUNDLE_VERSION}</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array>${LANGUAGES}</array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSDesktopFolderUsageDescription</key>
-  <string>Tendedero watches the folder where macOS saves your screenshots so it can hang them on the line.</string>
+  <string>${APP_NAME} watches the folder where macOS saves your screenshots so it can hang them on the line.</string>
   <key>NSDocumentsFolderUsageDescription</key>
-  <string>Tendedero watches the folder you chose so it can hang new images on the line.</string>
+  <string>${APP_NAME} watches the folder you chose so it can hang new images on the line.</string>
   <key>NSDownloadsFolderUsageDescription</key>
-  <string>Tendedero watches the folder you chose so it can hang new images on the line.</string>
+  <string>${APP_NAME} watches the folder you chose so it can hang new images on the line.</string>
 </dict>
 </plist>
 PLIST

@@ -37,7 +37,7 @@
 "Medium" = "Moyenne";
 "Large" = "Grande";
 "Bring the line down" = "Faire descendre la corde";
-"When the pointer rests in the menu bar" = "Quand le pointeur reste dans la barre des menus";
+"When the pointer rests at the top center" = "Quand le pointeur repose au centre supérieur";
 "When something new hangs" = "Quand une nouvelle capture s’accroche";
 "Over full screen apps" = "Au-dessus des apps en plein écran";
 "Hang copied images" = "Accrocher les images copiées";
@@ -64,3 +64,15 @@
 
 /* PeggedView */
 "Copied" = "Copié";
+
+/* Top center hover and mouse gestures */
+"Hover delay" = "Délai de survol";
+"%.1f seconds" = "%.1f s";
+"Mouse" = "Souris";
+"Click copies" = "Un clic copie";
+"Middle click deletes the photo under the pointer" = "Le clic central supprime la photo sous le pointeur";
+"Double-click copies. Right-click keeps the menu." = "Double-clic pour copier. Le clic droit garde le menu.";
+"Delete hovered photo" = "Supprimer la photo survolée";
+"Change Delete Shortcut…" = "Modifier le raccourci de suppression…";
+"Change Delete Shortcut" = "Modifier le raccourci de suppression";
+"Pull down the line" = "Faire descendre la ligne";

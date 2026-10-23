@@ -3,7 +3,7 @@ import AVFoundation
 import Combine
 import os
 
-let log = Logger(subsystem: "app.tendedero.Tendedero", category: "line")
+let log = Logger(subsystem: AppIdentity.bundleID, category: "line")
 
 /// One screenshot hanging on the line.
 struct Pegged: Identifiable, Equatable {
@@ -35,6 +35,10 @@ final class Line: ObservableObject {
     /// Whether the line has slid down into view.
     @Published var revealed = false
 
+    /// The photo under the pointer. Used by the delete shortcut; the card
+    /// already draws its own hover state, so this is not published.
+    var hoveredID: UUID?
+
     /// Card frames in window coordinates, reported by the views. The panel
     /// uses them to only catch clicks over photos and let the rest through.
     var hitRects: [UUID: CGRect] = [:]
@@ -62,6 +66,14 @@ final class Line: ObservableObject {
     var soundOn: Bool {
         get { !UserDefaults.standard.bool(forKey: "soundOff") }
         set { UserDefaults.standard.set(!newValue, forKey: "soundOff") }
+    }
+
+    /// The original click-to-copy is kept as an option, but off by default:
+    /// a double click copies, so a single click can no longer fill the
+    /// clipboard by accident.
+    var clickCopies: Bool {
+        get { UserDefaults.standard.bool(forKey: "clickCopies") }
+        set { UserDefaults.standard.set(newValue, forKey: "clickCopies") }
     }
 
     var liveCount: Int { items.filter { !$0.falling }.count }

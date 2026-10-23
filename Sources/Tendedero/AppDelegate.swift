@@ -21,8 +21,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var clipboardWatcher: ClipboardWatcher!
     private var signalSources: [DispatchSourceSignal] = []
     private var hotKey: HotKey?
+    private var deleteHotKey: HotKey?
     private var cancellables = Set<AnyCancellable>()
     private var mouseTimer: Timer?
+    /// The glass hint under the menu bar, shown before the line drops.
+    private var hintPanel: HoverHintPanel!
 
     /// Whether the panel is ordered in. It can be in and still tucked away
     /// above the top edge, like an auto-hiding Dock.
@@ -34,7 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var pinned = false
     /// A new screenshot shows itself for a moment, then tucks away.
     private var peekUntil = Date.distantPast
-    private var hotZoneSince: Date?
+    /// When the pointer first entered the top center hot zone.
+    private var topCenterSince: Date?
     /// After a click in the menu bar the line stays up there hidden until the
     /// pointer leaves the menu bar, so it does not come back over a menu.
     private var menuBarSuppressed = false
@@ -52,11 +56,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // What brings the line down, from the menu bar's "Bring the line down".
     // Out of the box, the first two are on and the third off.
 
-    /// Resting the pointer in the menu bar. Off, only the shortcut and the
+    /// Resting the pointer at the top center. Off, only the shortcut and the
     /// menu open it.
-    static var opensFromMenuBar: Bool {
-        get { !UserDefaults.standard.bool(forKey: "menuBarRevealOff") }
-        set { UserDefaults.standard.set(!newValue, forKey: "menuBarRevealOff") }
+    static var opensFromTopCenter: Bool {
+        get { !UserDefaults.standard.bool(forKey: "topCenterRevealOff") }
+        set { UserDefaults.standard.set(!newValue, forKey: "topCenterRevealOff") }
+    }
+
+    /// How long the hint stays before the line comes down.
+    static let topCenterDelayChoices: [TimeInterval] = [0.2, 0.5, 0.9, 1.4]
+
+    static var topCenterDelay: TimeInterval {
+        get {
+            let saved = UserDefaults.standard.double(forKey: "topCenterDelay")
+            return topCenterDelayChoices.contains(where: { abs($0 - saved) < 0.01 }) ? saved : 0.5
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "topCenterDelay") }
     }
 
     /// Something new hanging shows itself for a moment. Off, it hangs
@@ -71,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         host.sizingOptions = []
         panel = LinePanel(content: host)
         panel.placeOnScreen()
+        hintPanel = HoverHintPanel()
         updateCapacity()
 
         if Inbox.isEnabled { Inbox.apply() }
@@ -79,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         clipboardWatcher = ClipboardWatcher { [weak self] url in self?.hangCapture(url) }
         if ClipboardWatcher.isEnabled { clipboardWatcher.start() }
 
-        registerShortcut()
+        registerShortcuts()
 
         setUpStatusItem()
         watchMenuBarClicks()
@@ -372,6 +388,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func dismiss() {
         guard isPresent else { return }
+        hideHint()
         isPresent = false
         setRevealed(false)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
@@ -382,6 +399,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func reveal(pinned: Bool = false, peekFor seconds: TimeInterval = 0) {
         guard isPresent else { return }
+        hideHint()
         if pinned { self.pinned = true }
         if seconds > 0 { peekUntil = Date().addingTimeInterval(seconds) }
         awaySince = nil
@@ -408,6 +426,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !on {
             pinned = false
             peekUntil = .distantPast
+            line.hoveredID = nil
+            hideHint()
             panel.ignoresMouseEvents = true
             // Opened on purpose lasts until the line tucks away, however that
             // happens: an empty line then goes, as with the shortcut, and over
@@ -450,17 +470,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.ignoresMouseEvents = true
     }
 
-    /// How long the cursor rests against the top edge before the line comes
-    /// down. Short enough to feel instant, long enough that a quick trip to
-    /// the menu bar does not trigger it.
-    private static let revealDelay: TimeInterval = 0.25
-
     /// The menu bar strip at the top of a screen. With an auto-hiding menu
     /// bar the visible frame reaches the top, so the system thickness is used.
     static func menuBarBand(of screen: NSScreen) -> NSRect {
         var h = screen.frame.maxY - screen.visibleFrame.maxY
         if h < 1 { h = max(NSStatusBar.system.thickness, screen.safeAreaInsets.top) }
         return NSRect(x: screen.frame.minX, y: screen.frame.maxY - h, width: screen.frame.width, height: h)
+    }
+
+    /// A narrow strip at the top middle of a screen. It reaches a few points
+    /// below the menu bar so the pointer can rest just under the notch too.
+    static func topCenterZone(of screen: NSScreen) -> NSRect {
+        let bar = menuBarBand(of: screen)
+        let width = min(320, max(180, screen.frame.width * 0.22))
+        return NSRect(x: screen.frame.midX - width / 2, y: bar.minY - 8,
+                      width: width, height: bar.height + 8)
     }
 
     /// A click anywhere in the top bar of any screen, a menu or an icon, puts the line away.
@@ -471,7 +495,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let p = NSEvent.mouseLocation
                 guard NSScreen.screens.contains(where: { NSMouseInRect(p, Self.menuBarBand(of: $0), false) }) else { return }
                 self.menuBarSuppressed = true
-                self.hotZoneSince = nil
+                self.topCenterSince = nil
+                self.hideHint()
                 if self.isRevealed {
                     self.pinned = false
                     self.setRevealed(false)
@@ -497,30 +522,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !inMenuBar { menuBarSuppressed = false }
 
         guard isRevealed else {
-            // Resting in the menu bar brings the line down on that screen.
-            // Pushing against the top edge is part of it, and it also works
-            // when another display sits above and the pointer never stops.
-            // An empty line stays up there: only the shortcut and the menu
-            // bring it down on purpose.
-            if line.liveCount > 0, Self.opensFromMenuBar, let screen = screenUnderPointer,
-               inMenuBar, !menuBarSuppressed, !FullScreen.blocksLine(on: screen) {
-                let since = hotZoneSince ?? now
-                hotZoneSince = since
-                if now.timeIntervalSince(since) >= Self.revealDelay {
-                    hotZoneSince = nil
-                    if panel.screen != screen {
-                        panel.placeOnScreen()
-                        updateCapacity()
-                    }
-                    refresh()
-                    reveal()
-                }
-            } else {
-                hotZoneSince = nil
-            }
+            updateTopCenterHint(mouse: mouse, screen: screenUnderPointer, now: now)
             return
         }
 
+        hideHint()
         updateMousePassThrough(mouse)
 
         // The line's zone runs from its lowest point up to the top of the
@@ -544,6 +550,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// The pointer resting at the top center first shows a hint, then brings
+    /// the line down after the hover delay. It replaces the old whole-menu-bar
+    /// trigger, so reaching for the Apple menu or a status icon no longer
+    /// drops the line.
+    private func updateTopCenterHint(mouse: NSPoint, screen: NSScreen?, now: Date) {
+        guard Self.opensFromTopCenter, let screen,
+              NSMouseInRect(mouse, Self.topCenterZone(of: screen), false),
+              !menuBarSuppressed,
+              !FullScreen.blocksLine(on: screen) else {
+            topCenterSince = nil
+            hideHint()
+            return
+        }
+
+        let since = topCenterSince ?? now
+        topCenterSince = since
+        hintPanel.show(count: line.liveCount, on: screen)
+
+        guard line.liveCount > 0, now.timeIntervalSince(since) >= Self.topCenterDelay else { return }
+        topCenterSince = nil
+        hideHint()
+        if panel.screen != screen {
+            panel.placeOnScreen(screen)
+            updateCapacity()
+        }
+        wanted = true
+        refresh()
+        reveal()
+    }
+
+    private func hideHint() {
+        hintPanel?.hide()
+    }
+
     /// The panel spans the whole width of the screen, so it only accepts the
     /// mouse while the cursor is over a photo. Everywhere else, clicks go to
     /// whatever is underneath.
@@ -565,29 +605,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Shortcut
 
-    private func registerShortcut() {
+    private func registerShortcuts() {
         hotKey = nil
-        guard let shortcut = Shortcut.current else { return }
-        hotKey = HotKey(shortcut) { [weak self] in self?.toggle() }
+        deleteHotKey = nil
+        if let shortcut = Shortcut.current {
+            hotKey = HotKey(shortcut, id: 1) { [weak self] in self?.toggle() }
+        }
+        if let shortcut = Shortcut.deleteHovered {
+            deleteHotKey = HotKey(shortcut, id: 2) { [weak self] in self?.deleteHovered() }
+        }
     }
 
-    private func changeShortcut() {
-        // Off while recording, so pressing the current one records it
-        // instead of showing the line.
-        hotKey = nil
-        ShortcutRecorder.shared.record { [weak self] result in
+    /// The delete shortcut only acts on a photo that is actually under the
+    /// pointer while the line is down. Anywhere else it just beeps, so it can
+    /// never remove a random screenshot.
+    private func deleteHovered() {
+        guard isRevealed, let id = line.hoveredID, !GrabView.isShowingMenu else {
+            NSSound.beep()
+            return
+        }
+        line.discard(id)
+    }
+
+    private func changeShortcut(for slot: ShortcutSlot) {
+        // Off while recording, so pressing the current one records it instead
+        // of firing.
+        if slot == .showLine { hotKey = nil } else { deleteHotKey = nil }
+        ShortcutRecorder.shared.record(for: slot) { [weak self] result in
             guard let self else { return }
             if let result {
-                let previous = Shortcut.current
-                Shortcut.current = result
-                self.registerShortcut()
+                let previous = Shortcut.current(for: slot)
+                Shortcut.set(result, for: slot)
+                self.registerShortcuts()
                 // Taken by another app: keep the one that worked.
-                if result != nil && self.hotKey == nil {
+                let registered = slot == .showLine ? self.hotKey != nil : self.deleteHotKey != nil
+                if result != nil && !registered {
                     NSSound.beep()
-                    Shortcut.current = previous
+                    Shortcut.set(previous, for: slot)
                 }
             }
-            self.registerShortcut()
+            self.registerShortcuts()
         }
     }
 
@@ -677,11 +734,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let bringDown = NSMenuItem(title: L("Bring the line down"), action: nil, keyEquivalent: "")
         let options = NSMenu()
-        let hover = ClosureMenuItem(L("When the pointer rests in the menu bar")) {
-            AppDelegate.opensFromMenuBar.toggle()
+        let hover = ClosureMenuItem(L("When the pointer rests at the top center")) {
+            AppDelegate.opensFromTopCenter.toggle()
         }
-        hover.state = Self.opensFromMenuBar ? .on : .off
+        hover.state = Self.opensFromTopCenter ? .on : .off
         options.addItem(hover)
+        let delayItem = NSMenuItem(title: L("Hover delay"), action: nil, keyEquivalent: "")
+        let delays = NSMenu()
+        for delay in Self.topCenterDelayChoices {
+            let item = ClosureMenuItem(String(format: L("%.1f seconds"), delay)) {
+                AppDelegate.topCenterDelay = delay
+            }
+            item.state = abs(Self.topCenterDelay - delay) < 0.01 ? .on : .off
+            delays.addItem(item)
+        }
+        delayItem.submenu = delays
+        options.addItem(delayItem)
         let peek = ClosureMenuItem(L("When something new hangs")) {
             AppDelegate.peeksAtNew.toggle()
         }
@@ -695,6 +763,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         options.addItem(fullScreen)
         bringDown.submenu = options
         menu.addItem(bringDown)
+
+        let mouseItem = NSMenuItem(title: L("Mouse"), action: nil, keyEquivalent: "")
+        let mouseMenu = NSMenu()
+        mouseMenu.autoenablesItems = false
+        let click = ClosureMenuItem(L("Click copies")) { [weak self] in
+            self?.line.clickCopies.toggle()
+        }
+        click.state = line.clickCopies ? .on : .off
+        mouseMenu.addItem(click)
+        let middle = NSMenuItem(title: L("Middle click deletes the photo under the pointer"), action: nil, keyEquivalent: "")
+        middle.isEnabled = false
+        mouseMenu.addItem(middle)
+        let double = NSMenuItem(title: L("Double-click copies. Right-click keeps the menu."), action: nil, keyEquivalent: "")
+        double.isEnabled = false
+        mouseMenu.addItem(double)
+        let deleteItem = NSMenuItem(title: L("Delete hovered photo"), action: nil, keyEquivalent: "")
+        let deleteMenu = NSMenu()
+        let currentDelete = NSMenuItem(title: Shortcut.deleteHovered?.display ?? L("None"), action: nil, keyEquivalent: "")
+        currentDelete.isEnabled = false
+        deleteMenu.addItem(currentDelete)
+        deleteMenu.addItem(ClosureMenuItem(L("Change Delete Shortcut…")) { [weak self] in
+            self?.changeShortcut(for: .deleteHovered)
+        })
+        deleteItem.submenu = deleteMenu
+        mouseMenu.addItem(deleteItem)
+        mouseItem.submenu = mouseMenu
+        menu.addItem(mouseItem)
 
         let folderItem = NSMenuItem(title: L("Also watch folders"), action: nil, keyEquivalent: "")
         let folderMenu = NSMenu()
@@ -754,7 +849,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let current = NSMenuItem(title: Shortcut.current?.display ?? L("None"), action: nil, keyEquivalent: "")
         current.isEnabled = false
         shortcuts.addItem(current)
-        shortcuts.addItem(ClosureMenuItem(L("Change Shortcut…")) { [weak self] in self?.changeShortcut() })
+        shortcuts.addItem(ClosureMenuItem(L("Change Shortcut…")) { [weak self] in
+            self?.changeShortcut(for: .showLine)
+        })
         shortcutItem.submenu = shortcuts
         menu.addItem(shortcutItem)
 

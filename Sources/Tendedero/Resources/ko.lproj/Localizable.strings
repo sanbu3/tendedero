@@ -37,7 +37,7 @@
 "Medium" = "중간";
 "Large" = "크게";
 "Bring the line down" = "빨랫줄 내리기";
-"When the pointer rests in the menu bar" = "포인터가 메뉴 막대에 머무를 때";
+"When the pointer rests at the top center" = "포인터를 상단 중앙에 두었을 때";
 "When something new hangs" = "새 항목이 걸릴 때";
 "Over full screen apps" = "전체 화면 앱 위에서도";
 "Hang copied images" = "복사한 이미지 걸기";
@@ -64,3 +64,15 @@
 
 /* PeggedView */
 "Copied" = "복사됨";
+
+/* Top center hover and mouse gestures */
+"Hover delay" = "호버 지연";
+"%.1f seconds" = "%.1f초";
+"Mouse" = "마우스";
+"Click copies" = "클릭하여 복사";
+"Middle click deletes the photo under the pointer" = "가운데 버튼으로 포인터 아래 사진 삭제";
+"Double-click copies. Right-click keeps the menu." = "더블 클릭하여 복사. 오른쪽 클릭은 원래 메뉴.";
+"Delete hovered photo" = "포인터 아래 사진 삭제";
+"Change Delete Shortcut…" = "삭제 단축키 변경…";
+"Change Delete Shortcut" = "삭제 단축키 변경";
+"Pull down the line" = "줄을 아래로 당기기";

@@ -37,7 +37,7 @@
 "Medium" = "Orta";
 "Large" = "Büyük";
 "Bring the line down" = "İpi indir";
-"When the pointer rests in the menu bar" = "İşaretçi menü çubuğunda durduğunda";
+"When the pointer rests at the top center" = "İmleç üst orta kısımda durduğunda";
 "When something new hangs" = "Yeni bir şey asıldığında";
 "Over full screen apps" = "Tam ekran uygulamaların üzerinde";
 "Hang copied images" = "Kopyalanan görselleri as";
@@ -64,3 +64,15 @@
 
 /* PeggedView */
 "Copied" = "Kopyalandı";
+
+/* Top center hover and mouse gestures */
+"Hover delay" = "Üzerine gelme gecikmesi";
+"%.1f seconds" = "%.1f sn";
+"Mouse" = "Fare";
+"Click copies" = "Tıklama kopyalar";
+"Middle click deletes the photo under the pointer" = "Orta tık imlecin altındaki fotoğrafı siler";
+"Double-click copies. Right-click keeps the menu." = "Çift tık kopyalar. Sağ tık menüyü korur.";
+"Delete hovered photo" = "İmlecin altındaki fotoğrafı sil";
+"Change Delete Shortcut…" = "Silme kısayolunu değiştir…";
+"Change Delete Shortcut" = "Silme kısayolunu değiştir";
+"Pull down the line" = "Çizgiyi aşağı çek";
