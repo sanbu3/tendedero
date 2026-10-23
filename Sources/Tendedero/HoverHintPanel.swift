@@ -53,13 +53,23 @@ final class HoverHintPanel: NSPanel {
         return NSCursor(image: image, hotSpot: NSPoint(x: 10, y: 10))
     }()
 
+    /// The notch is the gap between the two auxiliary top areas. Nil on a
+    /// display without a notch; the hint then falls back to the top center.
+    static func notchWidth(of screen: NSScreen) -> CGFloat? {
+        guard let left = screen.auxiliaryTopLeftArea,
+              let right = screen.auxiliaryTopRightArea else { return nil }
+        let width = right.minX - left.maxX
+        return width > 30 ? width : nil
+    }
+
     private let hosting: NSHostingView<HoverHintView>
     private var lastProgress = -1.0
     private var lastSnap = -1.0
+    private var lastHasNotch: Bool?
     private var isShown = false
 
     init() {
-        hosting = NSHostingView(rootView: HoverHintView(progress: 0, snap: 0))
+        hosting = NSHostingView(rootView: HoverHintView(progress: 0, snap: 0, hasNotch: false))
         hosting.sizingOptions = []
         super.init(contentRect: NSRect(x: 0, y: 0, width: 88, height: 64),
                    styleMask: [.borderless, .nonactivatingPanel],
@@ -92,10 +102,13 @@ final class HoverHintPanel: NSPanel {
     func show(on screen: NSScreen, progress: Double, snap: Double = 0) {
         let clamped = min(1, max(0, progress))
         let snapPhase = min(1, max(0, snap))
-        if abs(clamped - lastProgress) > 0.0015 || abs(snapPhase - lastSnap) > 0.0005 {
+        let hasNotch = Self.notchWidth(of: screen) != nil
+        if abs(clamped - lastProgress) > 0.0015 || abs(snapPhase - lastSnap) > 0.0005
+            || hasNotch != lastHasNotch {
             lastProgress = clamped
             lastSnap = snapPhase
-            hosting.rootView = HoverHintView(progress: clamped, snap: snapPhase)
+            lastHasNotch = hasNotch
+            hosting.rootView = HoverHintView(progress: clamped, snap: snapPhase, hasNotch: hasNotch)
             hosting.needsDisplay = true
         }
 
@@ -125,10 +138,27 @@ final class HoverHintPanel: NSPanel {
 private struct HoverHintView: View {
     let progress: Double
     let snap: Double
+    let hasNotch: Bool
 
     var body: some View {
-        MiniLine(progress: progress, snap: snap)
-            .frame(width: 88, height: 64)
+        ZStack(alignment: .top) {
+            if hasNotch {
+                // A dark tab that blends into the notch above, so the little
+                // line appears to come out of the notch itself.
+                Capsule()
+                    .fill(Color.black.opacity(0.92))
+                    .frame(width: 74, height: 6)
+                    .overlay(
+                        Capsule().stroke(.white.opacity(0.12), lineWidth: 0.5)
+                    )
+                    .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+                    .offset(y: -2)
+            }
+
+            MiniLine(progress: progress, snap: snap)
+                .frame(width: 88, height: 64)
+        }
+        .frame(width: 88, height: 64)
     }
 }
 
@@ -150,17 +180,20 @@ private struct MiniLine: View {
     var body: some View {
         GeometryReader { geometry in
             let mid = geometry.size.width / 2
-            let left: CGFloat = 12
-            let right = geometry.size.width - 12
-            let baseSag = CGFloat(1 - progress) * 34
+            // Stage one (0...0.5): the sag tightens. Stage two (0.5...1):
+            // the taut little line retracts into the notch.
+            let tighten = min(1, progress / 0.5)
+            let retract = max(0, min(1, (progress - 0.5) / 0.5))
+            let baseSag = CGFloat(1 - tighten) * 34
             // A very short, decaying twang when the line snaps taut. It only
             // bows downward; the upward half is hidden by the menu bar.
             let twang = CGFloat(sin(snap * .pi * 3) * 4 * (1 - snap))
             let sag = max(0, baseSag + twang)
+            let halfWidth = CGFloat(32 * (1 - retract))
             let pin = CGPoint(x: mid, y: sag)
             let rope = Path { path in
-                path.move(to: CGPoint(x: left, y: 0))
-                path.addQuadCurve(to: CGPoint(x: right, y: 0),
+                path.move(to: CGPoint(x: mid - halfWidth, y: 0))
+                path.addQuadCurve(to: CGPoint(x: mid + halfWidth, y: 0),
                                   control: CGPoint(x: mid, y: sag * 2))
             }
 

@@ -56,6 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var hintLeaveSince: Date?
     /// Smoothed display progress for the mini line.
     private var hintShownProgress: Double = 0
+    /// The first stage has already given its haptic detent.
+    private var stageOneHapticFired = false
     /// After a click in the menu bar the line stays up there hidden until the
     /// pointer leaves the menu bar, so it does not come back over a menu.
     private var menuBarSuppressed = false
@@ -609,6 +611,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if topCenterSince == nil {
             topCenterSince = now
             topCenterMovedUp = false
+            stageOneHapticFired = false
             hintShownProgress = min(1, max(0, (mouse.y - showZone.minY) / max(1, showZone.height)))
         }
         guard let since = topCenterSince else { return }
@@ -624,6 +627,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // A low-pass filter makes the sag follow the pointer instead of
         // trembling with every small uncertain movement.
         hintShownProgress += (target - hintShownProgress) * 0.22
+        // The first detent lands at the moment the little line goes taut:
+        // halfway through the pull. Stage two then retracts it.
+        if hintShownProgress >= 0.5, !stageOneHapticFired {
+            stageOneHapticFired = true
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        }
         hintPanel.show(on: screen, progress: hintShownProgress)
 
         guard mouse.y >= screen.frame.maxY - Self.topCenterWakeBand,
@@ -635,6 +644,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         snapping = true
         snapStartedAt = now
         snapScreen = screen
+        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
         hintShownProgress = 1
         topCenterSince = nil
         topCenterMovedUp = false
@@ -657,6 +667,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         topCenterMovedUp = false
         hintShownProgress = 0
         hintLeaveSince = nil
+        stageOneHapticFired = false
         hideHint()
         if panel.screen != screen {
             panel.placeOnScreen(screen)
@@ -675,6 +686,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         topCenterMovedUp = false
         hintShownProgress = 0
         hintLeaveSince = nil
+        stageOneHapticFired = false
         hideHint()
     }
 
