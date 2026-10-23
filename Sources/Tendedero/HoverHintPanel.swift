@@ -92,7 +92,7 @@ final class HoverHintPanel: NSPanel {
     func show(on screen: NSScreen, progress: Double, snap: Double = 0) {
         let clamped = min(1, max(0, progress))
         let snapPhase = min(1, max(0, snap))
-        if abs(clamped - lastProgress) > 0.0005 || abs(snapPhase - lastSnap) > 0.0005 {
+        if abs(clamped - lastProgress) > 0.0015 || abs(snapPhase - lastSnap) > 0.0005 {
             lastProgress = clamped
             lastSnap = snapPhase
             hosting.rootView = HoverHintView(progress: clamped, snap: snapPhase)

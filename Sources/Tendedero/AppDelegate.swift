@@ -51,6 +51,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Last pointer height, so entering the zone from below counts as moving
     /// up even when it happens between two timer ticks.
     private var previousMouseY: CGFloat?
+    /// Debounce for leaving the hot zone, so jitter at the edge does not
+    /// flicker the hint on and off.
+    private var hintLeaveSince: Date?
+    /// Smoothed display progress for the mini line.
+    private var hintShownProgress: Double = 0
     /// After a click in the menu bar the line stays up there hidden until the
     /// pointer leaves the menu bar, so it does not come back over a menu.
     private var menuBarSuppressed = false
@@ -88,6 +93,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let topCenterMinimumHint: TimeInterval = 0.12
     /// The little twang and flash after the line goes taut.
     private static let snapDuration: TimeInterval = 0.18
+    /// How long the pointer may sit outside the (slightly larger) keep zone
+    /// before the hint is allowed to disappear.
+    private static let hintLeaveGrace: TimeInterval = 0.12
 
     /// Something new hanging shows itself for a moment. Off, it hangs
     /// quietly and waits for you to bring the line down.
@@ -576,28 +584,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// pointer reaches the top edge after climbing from where it entered.
     private func updateTopCenterHint(mouse: NSPoint, screen: NSScreen?, now: Date, previousY: CGFloat?) {
         guard Self.opensFromTopCenter, let screen,
-              NSMouseInRect(mouse, Self.topCenterZone(of: screen), false),
               !menuBarSuppressed,
               !FullScreen.blocksLine(on: screen) else {
             resetTopCenterHint()
             return
         }
 
+        // Once visible, the hint keeps a slightly larger zone. A small
+        // deadband plus a short grace stops edge jitter from flickering it.
+        let showZone = Self.topCenterZone(of: screen)
+        let keepZone = showZone.insetBy(dx: -14, dy: -14)
+        let inside = NSMouseInRect(mouse, topCenterSince == nil ? showZone : keepZone, false)
+        if !inside {
+            if topCenterSince != nil {
+                let since = hintLeaveSince ?? now
+                hintLeaveSince = since
+                if now.timeIntervalSince(since) < Self.hintLeaveGrace { return }
+            }
+            resetTopCenterHint()
+            return
+        }
+        hintLeaveSince = nil
+
         if topCenterSince == nil {
             topCenterSince = now
             topCenterMovedUp = false
+            hintShownProgress = min(1, max(0, (mouse.y - showZone.minY) / max(1, showZone.height)))
         }
         guard let since = topCenterSince else { return }
         if let previousY, mouse.y > previousY + 0.5 { topCenterMovedUp = true }
-        // The rail is only useful when there is something on the line. With
-        // an empty line it stays out of the way entirely.
+
+        // The mini line is only useful when there is something on the line.
         guard line.liveCount > 0 else {
             resetTopCenterHint()
             return
         }
-        let zone = Self.topCenterZone(of: screen)
-        let progress = min(1, max(0, (mouse.y - zone.minY) / max(1, zone.height)))
-        hintPanel.show(on: screen, progress: Double(progress))
+
+        let target = min(1, max(0, (mouse.y - showZone.minY) / max(1, showZone.height)))
+        // A low-pass filter makes the sag follow the pointer instead of
+        // trembling with every small uncertain movement.
+        hintShownProgress += (target - hintShownProgress) * 0.22
+        hintPanel.show(on: screen, progress: hintShownProgress)
 
         guard mouse.y >= screen.frame.maxY - Self.topCenterWakeBand,
               topCenterMovedUp,
@@ -608,6 +635,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         snapping = true
         snapStartedAt = now
         snapScreen = screen
+        hintShownProgress = 1
         topCenterSince = nil
         topCenterMovedUp = false
         hintPanel.show(on: screen, progress: 1, snap: 0)
@@ -627,6 +655,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         snapScreen = nil
         topCenterSince = nil
         topCenterMovedUp = false
+        hintShownProgress = 0
+        hintLeaveSince = nil
         hideHint()
         if panel.screen != screen {
             panel.placeOnScreen(screen)
@@ -643,6 +673,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         snapScreen = nil
         topCenterSince = nil
         topCenterMovedUp = false
+        hintShownProgress = 0
+        hintLeaveSince = nil
         hideHint()
     }
 
