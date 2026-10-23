@@ -1,15 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// A short tail of the clothesline, hanging from the menu bar edge. The
-/// clothespin at its end is the handle: pulling the pointer up retracts the
-/// tail into the bar, and when the tail is gone the line drops.
+/// A miniature clothesline just under the menu bar, with a clothespin hanging
+/// at its lowest point. Moving the pointer up pulls the little line taut; when
+/// it is completely straight against the bar, the real line drops.
 ///
-/// Only the rope, the clip, and the glow. No text, no target line, no backing.
+/// Only the rope, the clip, and the glow. No text, no target, no backing.
 @MainActor
 final class HoverHintPanel: NSPanel {
     /// A crisp two-times-resolution white arrow with a black edge: the
-    /// cursor shown while the pull cord is visible.
+    /// cursor shown while the pull line is visible.
     static let pullCursor: NSCursor = {
         let points = NSSize(width: 20, height: 20)
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 40, pixelsHigh: 40,
@@ -60,7 +60,7 @@ final class HoverHintPanel: NSPanel {
     init() {
         hosting = NSHostingView(rootView: HoverHintView(progress: 0))
         hosting.sizingOptions = []
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 40, height: 130),
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 88, height: 64),
                    styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         isOpaque = false
@@ -79,16 +79,15 @@ final class HoverHintPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    /// The rail hangs from the menu bar's lower edge, so the window is allowed
-    /// to sit right against it.
+    /// The little line hangs from the menu bar's lower edge.
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         frameRect
     }
 
-    /// Shows or updates the tail. `progress` runs from 0 at the bottom of the
-    /// hot zone to 1 at the top edge: the rope gets shorter as it approaches
-    /// the menu bar. The content is replaced on every change so the clip keeps
-    /// up with the 30 Hz pointer timer in a non-activating panel.
+    /// Shows or updates the miniature line. `progress` runs from 0 at the
+    /// bottom of the hot zone to 1 at the top edge; the sag disappears as the
+    /// pointer climbs. The content is replaced on every change so the clip
+    /// keeps up with the 30 Hz pointer timer in a non-activating panel.
     func show(on screen: NSScreen, progress: Double) {
         let clamped = min(1, max(0, progress))
         if abs(clamped - lastProgress) > 0.0005 {
@@ -97,7 +96,7 @@ final class HoverHintPanel: NSPanel {
             hosting.needsDisplay = true
         }
 
-        let size = NSSize(width: 40, height: 130)
+        let size = NSSize(width: 88, height: 64)
         let bar = AppDelegate.menuBarBand(of: screen)
         let target = NSRect(x: screen.frame.midX - size.width / 2,
                             y: bar.minY - size.height,
@@ -107,7 +106,7 @@ final class HoverHintPanel: NSPanel {
         guard !isShown else { return }
         isShown = true
         // Set the alpha outright: a window animation can be skipped while the
-        // app is an accessory, which would leave the tail invisible.
+        // app is an accessory, which would leave the line invisible.
         alphaValue = 1
         orderFrontRegardless()
     }
@@ -124,19 +123,19 @@ private struct HoverHintView: View {
     let progress: Double
 
     var body: some View {
-        PullCord(progress: progress)
-            .frame(width: 40, height: 130)
+        MiniLine(progress: progress)
+            .frame(width: 88, height: 64)
     }
 }
 
-/// The whole hint: a rope tail whose length is the remaining pull, the clip
-/// at its end, and a glow that travels with the clip.
-private struct PullCord: View {
+/// A tiny clothesline segment: two ends at the menu bar, a sagging rope, and a
+/// clothespin at the lowest point. The sag is the remaining pull.
+private struct MiniLine: View {
     let progress: Double
 
     private var warm: Bool { progress > 0.85 }
 
-    /// The rope starts cool and turns warm as it retracts.
+    /// The rope starts cool and turns warm as the sag disappears.
     private var glowColor: Color {
         Color(hue: 0.42 - 0.32 * progress, saturation: 0.8, brightness: 1)
     }
@@ -146,21 +145,24 @@ private struct PullCord: View {
     var body: some View {
         GeometryReader { geometry in
             let mid = geometry.size.width / 2
-            let maxRope: CGFloat = 112
-            let pinY = maxRope * (1 - CGFloat(progress))
+            let left: CGFloat = 12
+            let right = geometry.size.width - 12
+            let sag = CGFloat(1 - progress) * 34
+            let pin = CGPoint(x: mid, y: sag)
             let rope = Path { path in
-                path.move(to: CGPoint(x: mid, y: 0))
-                path.addLine(to: CGPoint(x: mid, y: pinY))
+                path.move(to: CGPoint(x: left, y: 0))
+                path.addQuadCurve(to: CGPoint(x: right, y: 0),
+                                  control: CGPoint(x: mid, y: sag * 2))
             }
 
             ZStack {
-                // Soft light along the remaining tail.
+                // Soft light along the little rope.
                 rope
                     .stroke(glowColor.opacity(glowAlpha),
                             style: StrokeStyle(lineWidth: 8, lineCap: .round))
                     .blur(radius: 4)
 
-                // A dark edge keeps the tail readable over light tab bars.
+                // A dark edge keeps the rope readable over light tab bars.
                 rope
                     .stroke(Color.black.opacity(0.22),
                             style: StrokeStyle(lineWidth: 5, lineCap: .round))
@@ -169,7 +171,7 @@ private struct PullCord: View {
                     .stroke(glowColor,
                             style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
 
-                // The halo that rides with the clip.
+                // Halo riding with the clip.
                 Circle()
                     .fill(
                         RadialGradient(colors: [glowColor.opacity(0.5), glowColor.opacity(0)],
@@ -177,17 +179,17 @@ private struct PullCord: View {
                     )
                     .frame(width: CGFloat(26 + 8 * progress),
                            height: CGFloat(26 + 8 * progress))
-                    .position(x: mid, y: pinY)
+                    .position(pin)
                     .blur(radius: 2)
 
                 ClothespinMarker(warm: warm)
-                    .position(x: mid, y: pinY)
+                    .position(pin)
             }
         }
     }
 }
 
-/// A compact aluminium clip at the tail's end. The slot is enough to read it
+/// A compact aluminium clip hanging at the sag. The slot is enough to read it
 /// as a clothespin at this size.
 private struct ClothespinMarker: View {
     let warm: Bool
