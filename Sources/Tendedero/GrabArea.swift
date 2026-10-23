@@ -112,6 +112,11 @@ final class GrabView: NSView, NSDraggingSource {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// The photos are clickable, so the software area gets a hand cursor.
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
     /// The discard cross drawn in the top left corner of the card. It is
     /// handled here because this view sits on top of the SwiftUI card.
     static let crossHitSize: CGFloat = 26

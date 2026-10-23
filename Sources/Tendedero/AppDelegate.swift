@@ -42,6 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Whether the pointer has moved upward since the hint appeared. This is
     /// the gesture that wakes the line.
     private var topCenterMovedUp = false
+    /// Whether the custom pull-up cursor is on the cursor stack.
+    private var pullCursorPushed = false
     /// Last pointer height, so entering the zone from below counts as moving
     /// up even when it happens between two timer ticks.
     private var previousMouseY: CGFloat?
@@ -608,6 +610,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func hideHint() {
+        if pullCursorPushed {
+            NSCursor.pop()
+            pullCursorPushed = false
+        }
         hintPanel?.hide()
     }
 

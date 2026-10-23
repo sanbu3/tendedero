@@ -8,6 +8,51 @@ import SwiftUI
 /// It never takes a click and never becomes key: it is a sign, not a control.
 @MainActor
 final class HoverHintPanel: NSPanel {
+    /// A crisp two-times-resolution white arrow with a black edge: the
+    /// cursor shown while the pull cord is visible.
+    static let pullCursor: NSCursor = {
+        let points = NSSize(width: 20, height: 20)
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 40, pixelsHigh: 40,
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                         isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0),
+              let context = NSGraphicsContext(bitmapImageRep: rep) else {
+            return .arrow
+        }
+        rep.size = points
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        let transform = NSAffineTransform()
+        transform.scale(by: 2)
+        transform.concat()
+
+        let arrow = NSBezierPath()
+        arrow.move(to: NSPoint(x: 10, y: 18))
+        arrow.line(to: NSPoint(x: 17, y: 11))
+        arrow.line(to: NSPoint(x: 13, y: 11))
+        arrow.line(to: NSPoint(x: 13, y: 4))
+        arrow.line(to: NSPoint(x: 7, y: 4))
+        arrow.line(to: NSPoint(x: 7, y: 11))
+        arrow.line(to: NSPoint(x: 3, y: 11))
+        arrow.close()
+
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.4)
+        shadow.shadowBlurRadius = 2
+        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        shadow.set()
+        NSColor.white.setFill()
+        arrow.fill()
+        NSColor.black.withAlphaComponent(0.85).setStroke()
+        arrow.lineWidth = 1.2
+        arrow.stroke()
+
+        NSGraphicsContext.restoreGraphicsState()
+        let image = NSImage(size: points)
+        image.addRepresentation(rep)
+        return NSCursor(image: image, hotSpot: NSPoint(x: 10, y: 10))
+    }()
+
     private let hosting: NSHostingView<HoverHintView>
     private var lastProgress = -1.0
     private var isShown = false
@@ -90,26 +135,53 @@ private struct PullCord: View {
 
     private var warm: Bool { progress > 0.85 }
 
+    /// Follows the pointer's progress: teal at the bottom, orange at the top.
+    private var glowColor: Color {
+        Color(hue: 0.42 - 0.32 * progress, saturation: 0.8, brightness: 1)
+    }
+
+    private var glowAlpha: Double { 0.12 + 0.22 * progress }
+
     var body: some View {
         GeometryReader { geometry in
             let mid = geometry.size.width / 2
             let top: CGFloat = 14
             let bottom: CGFloat = 118
             let pegY = top + (bottom - top) * (1 - CGFloat(progress))
+            let fillPath = Path { path in
+                path.move(to: CGPoint(x: mid, y: bottom))
+                path.addLine(to: CGPoint(x: mid, y: pegY))
+            }
 
             ZStack {
+                // A soft light tail along the part of the rope the peg has
+                // already climbed.
+                fillPath
+                    .stroke(glowColor.opacity(glowAlpha),
+                            style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                    .blur(radius: 4)
+
                 Capsule()
                     .fill(Color.primary.opacity(0.16))
                     .frame(width: 2, height: bottom - top)
                     .position(x: mid, y: (top + bottom) / 2)
                     .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
 
-                Path { path in
-                    path.move(to: CGPoint(x: mid, y: bottom))
-                    path.addLine(to: CGPoint(x: mid, y: pegY))
-                }
-                .stroke(warm ? Color.orange : Color.accentColor,
-                        style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                fillPath
+                    .stroke(warm ? Color.orange : Color.accentColor,
+                            style: StrokeStyle(lineWidth: 2, lineCap: .round))
+
+                // A halo that rides with the peg and changes color as the
+                // pointer climbs.
+                Circle()
+                    .fill(
+                        RadialGradient(colors: [glowColor.opacity(0.45), glowColor.opacity(0)],
+                                       center: .center, startRadius: 0, endRadius: 16)
+                    )
+                    .frame(width: CGFloat(26 + 8 * progress),
+                           height: CGFloat(26 + 8 * progress))
+                    .position(x: mid, y: pegY)
+                    .blur(radius: 2)
 
                 // The short line at the top is both the clothesline end and
                 // the wake threshold.
@@ -117,7 +189,8 @@ private struct PullCord: View {
                     .fill(warm ? Color.orange : Color.primary.opacity(0.55))
                     .frame(width: 30, height: 2)
                     .position(x: mid, y: top)
-                    .shadow(color: warm ? Color.orange.opacity(0.7) : .clear, radius: 3)
+                    .shadow(color: warm ? Color.orange.opacity(0.7) : glowColor.opacity(0.2),
+                            radius: 3)
 
                 ClothespinMarker(warm: warm)
                     .position(x: mid, y: pegY)
