@@ -577,14 +577,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         guard let since = topCenterSince else { return }
         if let previousY, mouse.y > previousY + 0.5 { topCenterMovedUp = true }
+        // The rail is only useful when there is something on the line. With
+        // an empty line it stays out of the way entirely.
+        guard line.liveCount > 0 else {
+            resetTopCenterHint()
+            return
+        }
         let zone = Self.topCenterZone(of: screen)
-        // 0 at the bottom of the hot zone, 1 at the top edge. The hint rises
-        // with the pointer rather than with a timer.
         let progress = min(1, max(0, (mouse.y - zone.minY) / max(1, zone.height)))
-        hintPanel.show(count: line.liveCount, on: screen, progress: Double(progress))
+        hintPanel.show(on: screen, progress: Double(progress))
 
-        guard line.liveCount > 0,
-              mouse.y >= screen.frame.maxY - Self.topCenterWakeBand,
+        guard mouse.y >= screen.frame.maxY - Self.topCenterWakeBand,
               topCenterMovedUp,
               now.timeIntervalSince(since) >= Self.topCenterMinimumHint else { return }
 
