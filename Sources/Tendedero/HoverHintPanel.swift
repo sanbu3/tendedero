@@ -1,20 +1,32 @@
 import AppKit
 import SwiftUI
 
+/// The small values the hint view draws. The panel owns one and updates it
+/// from the 30 Hz pointer timer, so the progress bar can animate smoothly
+/// without rebuilding the SwiftUI root view on every tick.
+@MainActor
+final class HoverHintModel: ObservableObject {
+    @Published var count = 0
+    /// 0 at the bottom of the hot zone, 1 at the top edge.
+    @Published var progress: Double = 0
+}
+
 /// A small glass pill under the menu bar. It appears as soon as the pointer
 /// rests at the top center, then follows the pointer upward toward the menu
-/// bar. It never brings the line down by itself: only a further upward push
-/// to the top edge does that. The upward motion is the affordance.
+/// bar. Its bottom edge carries a progress bar that fills as the pointer
+/// climbs, so the wake threshold is visible before the line appears.
 ///
 /// It never takes a click and never becomes key: it is a sign, not a control.
 @MainActor
 final class HoverHintPanel: NSPanel {
+    private let model: HoverHintModel
     private let hosting: NSHostingView<HoverHintView>
-    private var shownCount = -1
     private var isShown = false
 
     init() {
-        hosting = NSHostingView(rootView: HoverHintView(count: 0))
+        let model = HoverHintModel()
+        self.model = model
+        self.hosting = NSHostingView(rootView: HoverHintView(model: model))
         hosting.sizingOptions = []
         super.init(contentRect: NSRect(x: 0, y: 0, width: 280, height: 44),
                    styleMask: [.borderless, .nonactivatingPanel],
@@ -43,18 +55,18 @@ final class HoverHintPanel: NSPanel {
     }
 
     /// Shows, repositions or updates the hint. `progress` runs from 0 at the
-    /// bottom of the hot zone to 1 at the top edge, so the pill rises with
-    /// the pointer. Cheap to call from the 30 Hz pointer timer.
+    /// bottom of the hot zone to 1 at the top edge, so the pill and its bar
+    /// rise with the pointer. Cheap to call from the 30 Hz pointer timer.
     func show(count: Int, on screen: NSScreen, progress: Double) {
-        if count != shownCount {
-            shownCount = count
-            hosting.rootView = HoverHintView(count: count)
-        }
+        if model.count != count { model.count = count }
+        let clamped = min(1, max(0, progress))
+        if abs(model.progress - clamped) > 0.001 { model.progress = clamped }
+
         let size = NSSize(width: 280, height: 44)
         let bar = AppDelegate.menuBarBand(of: screen)
         // The last stretch lifts the pill toward the menu bar, as if it were
         // being pulled up to wake the line.
-        let lift = CGFloat(min(1, max(0, progress))) * 16
+        let lift = CGFloat(clamped) * 16
         let target = NSRect(x: screen.frame.midX - size.width / 2,
                             y: bar.minY - size.height - 6 + lift,
                             width: size.width, height: size.height)
@@ -79,30 +91,39 @@ final class HoverHintPanel: NSPanel {
 }
 
 private struct HoverHintView: View {
-    let count: Int
+    @ObservedObject var model: HoverHintModel
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "tshirt")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
+        VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: "tshirt")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
 
-            if count == 0 {
-                Text(L("Take a screenshot and it will hang here"))
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-            } else {
-                Text(String(format: L("%d on the line"), count))
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                Text(L("Keep moving up to wake"))
-                    .font(.system(size: 11, weight: .regular, design: .rounded))
-                    .foregroundStyle(.secondary)
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
+                if model.count == 0 {
+                    Text(L("Take a screenshot and it will hang here"))
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(String(format: L("%d on the line"), model.count))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    Text(L("Keep moving up to wake"))
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .scaleEffect(model.progress > 0.85 ? 1.18 : 1)
+                        .animation(.easeOut(duration: 0.15), value: model.progress > 0.85)
+                }
+            }
+
+            if model.count > 0 {
+                progressBar
             }
         }
         .padding(.horizontal, 14)
+        .padding(.vertical, 6)
         .frame(width: 272, height: 36)
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(
@@ -113,5 +134,24 @@ private struct HoverHintView: View {
         )
         .overlay(Capsule().stroke(.black.opacity(0.10), lineWidth: 0.5).padding(-0.5))
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+    }
+
+    /// A thin neutral track at the bottom of the pill. It fills with the
+    /// pointer's climb and brightens just before the wake threshold.
+    private var progressBar: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.primary.opacity(0.12))
+                Capsule()
+                    .fill(Color.primary.opacity(model.progress > 0.85 ? 0.9 : 0.68))
+                    .frame(width: max(0, geometry.size.width * CGFloat(model.progress)))
+                    .opacity(model.progress > 0.01 ? 1 : 0)
+                    .shadow(color: Color.primary.opacity(model.progress > 0.85 ? 0.35 : 0.12),
+                            radius: 2)
+            }
+            .animation(.easeOut(duration: 0.08), value: model.progress)
+        }
+        .frame(height: 2.5)
     }
 }
