@@ -74,6 +74,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         set { UserDefaults.standard.set(newValue, forKey: "topCenterDelay") }
     }
 
+    /// Pushing the pointer to the very top wakes the line as soon as the
+    /// hint has had a moment to appear. Resting a little lower lets the hint
+    /// finish its own upward climb instead.
+    private static let topCenterWakeDelay: TimeInterval = 0.2
+    private static let topCenterWakeBand: CGFloat = 4
+
     /// Something new hanging shows itself for a moment. Off, it hangs
     /// quietly and waits for you to bring the line down.
     static var peeksAtNew: Bool {
@@ -566,9 +572,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let since = topCenterSince ?? now
         topCenterSince = since
-        hintPanel.show(count: line.liveCount, on: screen)
+        let elapsed = now.timeIntervalSince(since)
+        let progress = line.liveCount > 0 ? min(1, elapsed / Self.topCenterDelay) : 0
+        hintPanel.show(count: line.liveCount, on: screen, progress: progress)
 
-        guard line.liveCount > 0, now.timeIntervalSince(since) >= Self.topCenterDelay else { return }
+        guard line.liveCount > 0 else { return }
+        // Let the hint begin its climb; then either wait for it to finish or
+        // wake at once when the pointer is pressed against the top edge.
+        let atTop = mouse.y >= screen.frame.maxY - Self.topCenterWakeBand
+        let woke = atTop && elapsed >= Self.topCenterWakeDelay
+        guard woke || elapsed >= Self.topCenterDelay else { return }
         topCenterSince = nil
         hideHint()
         if panel.screen != screen {
@@ -772,6 +785,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         click.state = line.clickCopies ? .on : .off
         mouseMenu.addItem(click)
+        let clickNote = NSMenuItem(title: L("When off, a click previews"), action: nil, keyEquivalent: "")
+        clickNote.isEnabled = false
+        mouseMenu.addItem(clickNote)
         let middle = NSMenuItem(title: L("Middle click deletes the photo under the pointer"), action: nil, keyEquivalent: "")
         middle.isEnabled = false
         mouseMenu.addItem(middle)

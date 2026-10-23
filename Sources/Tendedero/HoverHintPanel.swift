@@ -2,8 +2,10 @@ import AppKit
 import SwiftUI
 
 /// A small glass pill under the menu bar. It appears as soon as the pointer
-/// rests at the top center, so the gesture has a visible affordance before
-/// the line drops. The line itself still waits for the hover delay.
+/// rests at the top center, then slides upward toward the menu bar while the
+/// hover delay runs. Reaching the top wakes the line; so does letting the
+/// pill finish its climb. The upward motion is the affordance: keep pushing
+/// up, and the line comes down.
 ///
 /// It never takes a click and never becomes key: it is a sign, not a control.
 @MainActor
@@ -34,17 +36,28 @@ final class HoverHintPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    /// Shows, repositions or updates the hint. Cheap to call from the 30 Hz
-    /// pointer timer: the frame only changes when the screen or count does.
-    func show(count: Int, on screen: NSScreen) {
+    /// Let the pill climb into the menu bar. The default window constraint
+    /// stops it at the menu bar's lower edge, which would hide the whole
+    /// upward gesture.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        frameRect
+    }
+
+    /// Shows, repositions or updates the hint. `progress` runs from 0 to 1
+    /// over the hover delay and lifts the pill toward the menu bar. Cheap to
+    /// call from the 30 Hz pointer timer: the window just moves.
+    func show(count: Int, on screen: NSScreen, progress: Double) {
         if count != shownCount {
             shownCount = count
             hosting.rootView = HoverHintView(count: count)
         }
         let size = NSSize(width: 280, height: 44)
         let bar = AppDelegate.menuBarBand(of: screen)
+        // The last stretch lifts the pill into the menu bar, as if it were
+        // being pulled up to wake the line.
+        let lift = CGFloat(min(1, max(0, progress))) * 22
         let target = NSRect(x: screen.frame.midX - size.width / 2,
-                            y: bar.minY - size.height - 6,
+                            y: bar.minY - size.height - 6 + lift,
                             width: size.width, height: size.height)
         if frame != target { setFrame(target, display: true) }
 
@@ -82,10 +95,10 @@ private struct HoverHintView: View {
             } else {
                 Text(String(format: L("%d on the line"), count))
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
-                Text(L("Pull down the line"))
+                Text(L("Keep moving up to wake"))
                     .font(.system(size: 11, weight: .regular, design: .rounded))
                     .foregroundStyle(.secondary)
-                Image(systemName: "chevron.down")
+                Image(systemName: "chevron.up")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.secondary)
             }
