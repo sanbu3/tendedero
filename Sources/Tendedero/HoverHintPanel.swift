@@ -1,15 +1,16 @@
 import AppKit
 import SwiftUI
 
-/// A miniature clothesline just under the menu bar, with a clothespin hanging
-/// at its lowest point. Moving the pointer up pulls the little line taut; when
-/// it is completely straight against the bar, the real line drops.
+/// A small zipper hanging from the menu bar (or the notch). Pulling the pointer
+/// up drags the slider up and the two rows of teeth part, opening a seam of
+/// light; when the seam is fully open the real clothesline drops.
 ///
-/// Only the rope, the clip, and the glow. No text, no target, no backing.
+/// Only the zipper, its pull tab, and the glow. No text, no target line, no
+/// backing.
 @MainActor
 final class HoverHintPanel: NSPanel {
     /// A crisp two-times-resolution white arrow with a black edge: the
-    /// cursor shown while the pull line is visible.
+    /// cursor shown while the zipper is visible.
     static let pullCursor: NSCursor = {
         let points = NSSize(width: 20, height: 20)
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 40, pixelsHigh: 40,
@@ -54,7 +55,7 @@ final class HoverHintPanel: NSPanel {
     }()
 
     /// The notch is the gap between the two auxiliary top areas. Nil on a
-    /// display without a notch; the hint then falls back to the top center.
+    /// display without a notch; the zipper then falls back to the top center.
     static func notchWidth(of screen: NSScreen) -> CGFloat? {
         guard let left = screen.auxiliaryTopLeftArea,
               let right = screen.auxiliaryTopRightArea else { return nil }
@@ -71,7 +72,7 @@ final class HoverHintPanel: NSPanel {
     init() {
         hosting = NSHostingView(rootView: HoverHintView(progress: 0, snap: 0, hasNotch: false))
         hosting.sizingOptions = []
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 88, height: 64),
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 64, height: 150),
                    styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         isOpaque = false
@@ -90,15 +91,15 @@ final class HoverHintPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    /// The little line hangs from the menu bar's lower edge.
+    /// The zipper hangs from the menu bar's lower edge.
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         frameRect
     }
 
-    /// Shows or updates the miniature line. `progress` runs from 0 at the
-    /// bottom of the hot zone to 1 at the top edge; the sag disappears as the
-    /// pointer climbs. The content is replaced on every change so the clip
-    /// keeps up with the 30 Hz pointer timer in a non-activating panel.
+    /// Shows or updates the zipper. `progress` runs from 0 at the bottom of
+    /// the hot zone to 1 at the top edge; the slider follows it upward while
+    /// the teeth part. The content is replaced on every change so it keeps up
+    /// with the 30 Hz pointer timer in a non-activating panel.
     func show(on screen: NSScreen, progress: Double, snap: Double = 0) {
         let clamped = min(1, max(0, progress))
         let snapPhase = min(1, max(0, snap))
@@ -112,7 +113,7 @@ final class HoverHintPanel: NSPanel {
             hosting.needsDisplay = true
         }
 
-        let size = NSSize(width: 88, height: 64)
+        let size = NSSize(width: 64, height: 150)
         let bar = AppDelegate.menuBarBand(of: screen)
         let target = NSRect(x: screen.frame.midX - size.width / 2,
                             y: bar.minY - size.height,
@@ -122,7 +123,7 @@ final class HoverHintPanel: NSPanel {
         guard !isShown else { return }
         isShown = true
         // Set the alpha outright: a window animation can be skipped while the
-        // app is an accessory, which would leave the line invisible.
+        // app is an accessory, which would leave the zipper invisible.
         alphaValue = 1
         orderFrontRegardless()
     }
@@ -143,11 +144,11 @@ private struct HoverHintView: View {
     var body: some View {
         ZStack(alignment: .top) {
             if hasNotch {
-                // A dark tab that blends into the notch above, so the little
-                // line appears to come out of the notch itself.
+                // A dark tab that blends into the notch above, so the zipper
+                // appears to come out of the notch itself.
                 Capsule()
                     .fill(Color.black.opacity(0.92))
-                    .frame(width: 74, height: 6)
+                    .frame(width: 44, height: 6)
                     .overlay(
                         Capsule().stroke(.white.opacity(0.12), lineWidth: 0.5)
                     )
@@ -155,119 +156,180 @@ private struct HoverHintView: View {
                     .offset(y: -2)
             }
 
-            MiniLine(progress: progress, snap: snap)
-                .frame(width: 88, height: 64)
+            ZipperHint(progress: progress, snap: snap)
+                .frame(width: 64, height: 150)
         }
-        .frame(width: 88, height: 64)
+        .frame(width: 64, height: 150)
     }
 }
 
-/// A tiny clothesline segment: two ends at the menu bar, a sagging rope, and a
-/// clothespin at the lowest point. The sag is the remaining pull.
-private struct MiniLine: View {
+/// The zipper itself: two strips, interlocking teeth, a slider, and a pull tab
+/// that swings as the pointer pulls.
+private struct ZipperHint: View {
     let progress: Double
     let snap: Double
 
-    private var warm: Bool { progress > 0.85 }
+    private var metal: LinearGradient {
+        LinearGradient(colors: [Color(white: 0.97), Color(white: 0.6)],
+                       startPoint: .top, endPoint: .bottom)
+    }
 
-    /// The rope starts cool and turns warm as the sag disappears.
+    /// Starts cool and turns warm as the seam opens.
     private var glowColor: Color {
         Color(hue: 0.42 - 0.32 * progress, saturation: 0.8, brightness: 1)
     }
 
-    private var glowAlpha: Double { 0.14 + 0.26 * progress }
-
     var body: some View {
         GeometryReader { geometry in
             let mid = geometry.size.width / 2
-            // Stage one (0...0.5): the sag tightens. Stage two (0.5...1):
-            // the taut little line retracts into the notch.
-            let tighten = min(1, progress / 0.5)
-            let retract = max(0, min(1, (progress - 0.5) / 0.5))
-            let baseSag = CGFloat(1 - tighten) * 34
-            // A very short, decaying twang when the line snaps taut. It only
-            // bows downward; the upward half is hidden by the menu bar.
-            let twang = CGFloat(sin(snap * .pi * 3) * 4 * (1 - snap))
-            let sag = max(0, baseSag + twang)
-            let halfWidth = CGFloat(32 * (1 - retract))
-            let pin = CGPoint(x: mid, y: sag)
-            let rope = Path { path in
-                path.move(to: CGPoint(x: mid - halfWidth, y: 0))
-                path.addQuadCurve(to: CGPoint(x: mid + halfWidth, y: 0),
-                                  control: CGPoint(x: mid, y: sag * 2))
+            let topY: CGFloat = 6
+            let bottomY: CGFloat = 120
+            let gapHalf: CGFloat = 9
+            let open = CGFloat(min(1, max(0, progress)))
+            let sliderY = topY + (1 - open) * (bottomY - topY)
+
+            let leftStrip = Path { path in
+                path.move(to: CGPoint(x: mid, y: topY))
+                path.addLine(to: CGPoint(x: mid, y: sliderY))
+                path.addLine(to: CGPoint(x: mid - gapHalf, y: bottomY))
+            }
+            let rightStrip = Path { path in
+                path.move(to: CGPoint(x: mid, y: topY))
+                path.addLine(to: CGPoint(x: mid, y: sliderY))
+                path.addLine(to: CGPoint(x: mid + gapHalf, y: bottomY))
+            }
+            // Interlocking teeth along the still-closed part of the seam.
+            let teeth = Path { path in
+                var y = topY
+                var i = 0
+                while y < sliderY {
+                    let dx: CGFloat = i % 2 == 0 ? -2 : 2
+                    path.move(to: CGPoint(x: mid + dx, y: y))
+                    path.addLine(to: CGPoint(x: mid + dx, y: y + 1.6))
+                    y += 6
+                    i += 1
+                }
             }
 
             ZStack {
-                // Soft light along the little rope.
-                rope
-                    .stroke(glowColor.opacity(glowAlpha),
-                            style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .blur(radius: 4)
+                // Light leaking through the opening seam.
+                Path { path in
+                    path.move(to: CGPoint(x: mid, y: sliderY))
+                    path.addLine(to: CGPoint(x: mid - gapHalf, y: bottomY))
+                    path.addLine(to: CGPoint(x: mid + gapHalf, y: bottomY))
+                    path.closeSubpath()
+                }
+                .fill(
+                    LinearGradient(colors: [glowColor.opacity(0.28 * open),
+                                            glowColor.opacity(0.04)],
+                                   startPoint: .top, endPoint: .bottom)
+                )
+                .blur(radius: 4)
 
-                // A dark edge keeps the rope readable over light tab bars.
-                rope
-                    .stroke(Color.black.opacity(0.22),
-                            style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                // The two fabric strips, with a dark edge for contrast.
+                leftStrip.stroke(Color.black.opacity(0.22),
+                                 style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                rightStrip.stroke(Color.black.opacity(0.22),
+                                  style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                leftStrip.stroke(metal, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                rightStrip.stroke(metal, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
 
-                rope
-                    .stroke(glowColor,
-                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                teeth.stroke(Color.black.opacity(0.25),
+                             style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                teeth.stroke(Color.white.opacity(0.5),
+                             style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
 
-                // Halo riding with the clip.
+                // Halo riding with the slider.
                 Circle()
                     .fill(
                         RadialGradient(colors: [glowColor.opacity(0.5), glowColor.opacity(0)],
                                        center: .center, startRadius: 0, endRadius: 16)
                     )
-                    .frame(width: CGFloat(26 + 8 * progress),
-                           height: CGFloat(26 + 8 * progress))
-                    .position(pin)
+                    .frame(width: CGFloat(36 + 12 * open), height: CGFloat(36 + 12 * open))
+                    .position(x: mid, y: sliderY)
                     .blur(radius: 2)
 
-                ClothespinMarker(warm: warm)
-                    .position(pin)
+                ZipperSlider(metal: metal)
+                    .position(x: mid, y: sliderY)
 
-                // The "snap": one warm ring and a small white flash at the
-                // clip as the line goes taut.
+                PullTab(metal: metal, angle: tabAngle)
+                    .position(x: mid, y: sliderY + 9)
+
+                // The snap flash at the slider.
                 if snap > 0 {
                     let flash = max(0, sin(snap * .pi))
                     Circle()
                         .stroke(glowColor.opacity(flash), lineWidth: 1.5)
-                        .frame(width: CGFloat(8 + 30 * snap),
-                               height: CGFloat(8 + 30 * snap))
-                        .position(pin)
+                        .frame(width: CGFloat(8 + 30 * snap), height: CGFloat(8 + 30 * snap))
+                        .position(x: mid, y: sliderY)
                         .blur(radius: 1)
                     Circle()
                         .fill(Color.white.opacity(flash * 0.7))
-                        .frame(width: CGFloat(6 + 10 * snap),
-                               height: CGFloat(6 + 10 * snap))
-                        .position(pin)
+                        .frame(width: CGFloat(6 + 10 * snap), height: CGFloat(6 + 10 * snap))
+                        .position(x: mid, y: sliderY)
                         .blur(radius: 1)
                 }
             }
         }
     }
+
+    /// The pull tab trails the slider as it climbs and twangs on the snap.
+    private var tabAngle: Double {
+        8 * sin(Double(progress) * .pi)
+            + sin(snap * .pi * 3) * 12 * (1 - snap)
+    }
 }
 
-/// A compact aluminium clip hanging at the sag. The slot is enough to read it
-/// as a clothespin at this size.
-private struct ClothespinMarker: View {
-    let warm: Bool
+/// The metal slider that sits at the join of the two zipper halves.
+private struct ZipperSlider: View {
+    let metal: LinearGradient
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 2, style: .continuous)
-            .fill(LinearGradient(colors: [Color(white: 0.97), Color(white: 0.62)],
-                                 startPoint: .top, endPoint: .bottom))
-            .frame(width: 26, height: 10)
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .fill(metal)
+            .frame(width: 15, height: 20)
+            .overlay(
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .stroke(Color.black.opacity(0.3), lineWidth: 0.6)
+            )
             .overlay(
                 Capsule()
-                    .fill(Color.black.opacity(0.30))
-                    .frame(width: 14, height: 0.9)
+                    .fill(Color.black.opacity(0.28))
+                    .frame(width: 9, height: 1)
+                    .offset(y: -3)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .stroke(warm ? Color.orange : Color.black.opacity(0.25), lineWidth: 0.6)
+                Capsule()
+                    .fill(Color.white.opacity(0.5))
+                    .frame(width: 9, height: 0.5)
+                    .offset(y: -3.5)
             )
-            .shadow(color: .black.opacity(0.30), radius: 1.5, y: 0.8)
+            .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+    }
+}
+
+/// The small hanging tab with a ring hole. It swings around its top pivot.
+private struct PullTab: View {
+    let metal: LinearGradient
+    let angle: Double
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                .fill(metal)
+                .frame(width: 6, height: 15)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .stroke(Color.black.opacity(0.3), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(0.3), radius: 1.5, y: 0.8)
+
+            Circle()
+                .stroke(Color.black.opacity(0.45), lineWidth: 1)
+                .frame(width: 4, height: 4)
+                .offset(y: 5)
+        }
+        .frame(width: 8, height: 17)
+        .rotationEffect(.degrees(angle), anchor: .top)
     }
 }
