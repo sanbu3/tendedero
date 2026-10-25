@@ -198,18 +198,6 @@ private struct ZipperHint: View {
                 path.addLine(to: CGPoint(x: mid, y: sliderY))
                 path.addLine(to: CGPoint(x: mid + gapHalf, y: bottomY))
             }
-            // Interlocking teeth along the still-closed part of the seam.
-            let teeth = Path { path in
-                var y = topY
-                var i = 0
-                while y < sliderY {
-                    let dx: CGFloat = i % 2 == 0 ? -2 : 2
-                    path.move(to: CGPoint(x: mid + dx, y: y))
-                    path.addLine(to: CGPoint(x: mid + dx, y: y + 1.6))
-                    y += 6
-                    i += 1
-                }
-            }
 
             ZStack {
                 // Light leaking through the opening seam.
@@ -234,10 +222,19 @@ private struct ZipperHint: View {
                 leftStrip.stroke(metal, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                 rightStrip.stroke(metal, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
 
-                teeth.stroke(Color.black.opacity(0.25),
-                             style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
-                teeth.stroke(Color.white.opacity(0.5),
-                             style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                // Neat, rounded interlocking teeth along the closed seam.
+                ForEach(0..<max(0, Int((sliderY - topY) / 5)), id: \.self) { i in
+                    let y = topY + CGFloat(i) * 5
+                    let dx: CGFloat = i % 2 == 0 ? -1.5 : 1.5
+                    RoundedRectangle(cornerRadius: 1, style: .continuous)
+                        .fill(metal)
+                        .frame(width: 4.6, height: 2.4)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 1, style: .continuous)
+                                .stroke(Color.black.opacity(0.28), lineWidth: 0.4)
+                        )
+                        .position(x: mid + dx, y: y)
+                }
 
                 // Halo riding with the slider.
                 Circle()

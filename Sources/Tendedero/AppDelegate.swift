@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Carbon
 import Combine
 import Quartz
@@ -44,6 +45,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var topCenterMovedUp = false
     /// Whether the custom pull-up cursor is on the cursor stack.
     private var pullCursorPushed = false
+    /// Plays the short thump when the zipper snaps open.
+    private var snapPlayer: AVAudioPlayer?
     /// A short snap/flash is playing at the wake threshold.
     private var snapping = false
     private var snapStartedAt: Date?
@@ -112,6 +115,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel = LinePanel(content: host)
         panel.placeOnScreen()
         hintPanel = HoverHintPanel()
+        snapPlayer = {
+            guard let url = Bundle.main.url(forResource: "zipper-thump", withExtension: "mp3") else { return nil }
+            let player = try? AVAudioPlayer(contentsOf: url)
+            player?.volume = 0.55
+            player?.prepareToPlay()
+            return player
+        }()
         updateCapacity()
 
         if Inbox.isEnabled { Inbox.apply() }
@@ -645,6 +655,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         snapStartedAt = now
         snapScreen = screen
         NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+        if line.soundOn {
+            snapPlayer?.currentTime = 0
+            snapPlayer?.play()
+        }
         hintShownProgress = 1
         topCenterSince = nil
         topCenterMovedUp = false
