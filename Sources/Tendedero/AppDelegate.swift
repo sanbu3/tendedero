@@ -19,6 +19,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Folders chosen in "Also watch folders", like the one another
     /// screenshot app saves to.
     private var folderWatchers: [ScreenshotWatcher] = []
+    /// Picks up pointer files the `tendedero` CLI drops in the spool.
+    private var spoolWatcher: SpoolWatcher?
+    /// Picks up screenshots the iPhone shortcut saves into iCloud Drive, in
+    /// both locations the shortcut can reach.
+    private var phoneWatchers: [ScreenshotWatcher] = []
     private var clipboardWatcher: ClipboardWatcher!
     private var signalSources: [DispatchSourceSignal] = []
     private var hotKey: HotKey?
@@ -26,7 +31,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var mouseTimer: Timer?
     /// The glass hint under the menu bar, shown before the line drops.
-    private var hintPanel: HoverHintPanel!
 
     /// Whether the panel is ordered in. It can be in and still tucked away
     /// above the top edge, like an auto-hiding Dock.
@@ -40,27 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var peekUntil = Date.distantPast
     /// When the pointer first entered the top center hot zone.
     private var topCenterSince: Date?
-    /// Whether the pointer has moved upward since the hint appeared. This is
-    /// the gesture that wakes the line.
+    /// Whether the pointer has moved upward since it entered the zone. This
+    /// is the gesture that wakes the line.
     private var topCenterMovedUp = false
-    /// Whether the custom pull-up cursor is on the cursor stack.
-    private var pullCursorPushed = false
-    /// Plays the short thump when the zipper snaps open.
-    private var snapPlayer: AVAudioPlayer?
-    /// A short snap/flash is playing at the wake threshold.
-    private var snapping = false
-    private var snapStartedAt: Date?
-    private var snapScreen: NSScreen?
-    /// Last pointer height, so entering the zone from below counts as moving
-    /// up even when it happens between two timer ticks.
-    private var previousMouseY: CGFloat?
-    /// Debounce for leaving the hot zone, so jitter at the edge does not
-    /// flicker the hint on and off.
-    private var hintLeaveSince: Date?
-    /// Smoothed display progress for the mini line.
-    private var hintShownProgress: Double = 0
-    /// The first stage has already given its haptic detent.
-    private var stageOneHapticFired = false
     /// After a click in the menu bar the line stays up there hidden until the
     /// pointer leaves the menu bar, so it does not come back over a menu.
     private var menuBarSuppressed = false
@@ -94,13 +80,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// run makes the threshold a deliberate gesture.
     private static let topCenterPullHeight: CGFloat = 144
     private static let topCenterWakeBand: CGFloat = 4
-    /// A short guard so the hint is visible even on a very fast upward push.
+    /// A short guard so a very fast upward push still wakes the line.
     private static let topCenterMinimumHint: TimeInterval = 0.12
-    /// The little twang and flash after the line goes taut.
-    private static let snapDuration: TimeInterval = 0.18
-    /// How long the pointer may sit outside the (slightly larger) keep zone
-    /// before the hint is allowed to disappear.
-    private static let hintLeaveGrace: TimeInterval = 0.12
 
     /// Something new hanging shows itself for a moment. Off, it hangs
     /// quietly and waits for you to bring the line down.
@@ -114,14 +95,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         host.sizingOptions = []
         panel = LinePanel(content: host)
         panel.placeOnScreen()
-        hintPanel = HoverHintPanel()
-        snapPlayer = {
-            guard let url = Bundle.main.url(forResource: "zipper-thump", withExtension: "mp3") else { return nil }
-            let player = try? AVAudioPlayer(contentsOf: url)
-            player?.volume = 0.55
-            player?.prepareToPlay()
-            return player
-        }()
         updateCapacity()
 
         if Inbox.isEnabled { Inbox.apply() }
@@ -231,6 +204,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             extra.start()
             folderWatchers.append(extra)
         }
+        if spoolWatcher == nil {
+            let spool = SpoolWatcher { [weak self] url in self?.hangCapture(url) }
+            spool.start()
+            spoolWatcher = spool
+        }
+        setPhoneWatching(PhoneSync.isEnabled, announceFailure: false)
+    }
+
+    // MARK: Phone sync
+
+    /// Turns the iCloud Drive watcher on or off. The folder is created on
+    /// demand, so the phone side of the shortcut has somewhere to save even
+    /// before its first run.
+    private func setPhoneWatching(_ enabled: Bool, announceFailure: Bool = true) {
+        phoneWatchers.forEach { $0.stop() }
+        phoneWatchers = []
+        guard enabled else { return }
+        if !PhoneSync.driveAvailable {
+            if announceFailure {
+                let alert = NSAlert()
+                alert.messageText = L("iCloud Drive is not available")
+                alert.informativeText = L("Sign in to iCloud Drive and try again.")
+                alert.runModal()
+            }
+            PhoneSync.isEnabled = false
+            return
+        }
+        for folder in PhoneSync.folders {
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let watcher = ScreenshotWatcher(
+                folder: folder, anyImage: true,
+                onNew: { [weak self] url in self?.hangCapture(url) },
+                onChange: { [weak self] in self?.line.prune() })
+            watcher.start()
+            phoneWatchers.append(watcher)
+        }
     }
 
     /// Up to three folders: enough for another screenshot app or an export
@@ -334,6 +343,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// A new screenshot lifts off from where it was taken and flies to its
     /// place on the line. Without a known capture area it simply drops in.
+    ///
+    /// The thumbnail is decoded off the main thread first. Two captures
+    /// arriving together — a phone shot over iCloud and something copied
+    /// just after — used to decode one after another on the main thread,
+    /// long enough for the line to stutter as it came down.
     private func hangCapture(_ url: URL) {
         let from = captureRect(of: url)
         let screen = from.flatMap { from in
@@ -343,17 +357,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // was taken on. On a full line the oldest photo then falls in view as
         // the new one flies in.
         comeDown(on: screen)
-        guard let id = line.hang(url, flying: from != nil) else {
-            // Nothing hung after all, so an empty line goes away again.
-            itemsChanged()
-            return
-        }
-        guard let from else { return }
-        // Let the line come down and lay out before measuring the landing spot.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
-            self?.fly(id, from: from)
+        decodeThenHang(url, flying: from != nil) { [weak self] id in
+            guard let self, let from else { return }
+            // Let the line come down and lay out before measuring the landing spot.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+                self.fly(id, from: from)
+            }
         }
     }
+
+    /// Decodes the thumbnail, then hangs. An iCloud file that has not synced
+    /// down yet is downloaded first, with a few retries before giving up.
+    private func decodeThenHang(_ url: URL, flying: Bool, then: @escaping (UUID) -> Void) {
+        decodeThumbnail(url) { [weak self] thumb in
+            guard let self else { return }
+            if let id = self.line.hang(url, flying: flying, thumb: thumb) {
+                then(id)
+            } else if thumb == nil, self.iCloudWaitCount[url.path] ?? 0 < 5 {
+                // Probably an iCloud placeholder: ask for the file and try
+                // again a moment later. A truly unreadable file is dropped
+                // once the retries run out.
+                self.iCloudWaitCount[url.path] = (self.iCloudWaitCount[url.path] ?? 0) + 1
+                try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                    self?.decodeThenHang(url, flying: flying, then: then)
+                }
+            } else {
+                // Nothing hung after all, so an empty line goes away again.
+                self.iCloudWaitCount[url.path] = nil
+                self.itemsChanged()
+            }
+        }
+    }
+
+    /// How many times each not-yet-synced file has been retried.
+    private var iCloudWaitCount: [String: Int] = [:]
 
     private func fly(_ id: UUID, from: CGRect) {
         guard isPresent, isRevealed, CaptureFlight.flightsInProgress < 2, let screen = panel.screen,
@@ -365,13 +403,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Sharp enough while it starts out at the captured size, which a
         // full Retina screen would otherwise take at full resolution.
         let pixels = Int(max(from.width, from.height) * screen.backingScaleFactor)
-        guard let image = makeThumbnail(item.url, maxPixels: min(1500, max(400, pixels)))?
-            .cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            line.land(id)
-            return
-        }
-        CaptureFlight.fly(image: image, from: from, to: to, tilt: CGFloat(item.tilt), on: screen) { [weak self] in
-            self?.line.land(id)
+        let size = min(1500, max(400, pixels))
+        // The flying image decodes off the main thread too: the line is
+        // coming down just now, and it should not skip while doing so.
+        decodeThumbnail(item.url, maxPixels: size) { [weak self] thumb in
+            guard let self else { return }
+            guard let image = thumb?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                self.line.land(id)
+                return
+            }
+            CaptureFlight.fly(image: image, from: from, to: to, tilt: CGFloat(item.tilt), on: screen) {
+                self.line.land(id)
+            }
         }
     }
 
@@ -423,7 +466,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func dismiss() {
         guard isPresent else { return }
-        hideHint()
         isPresent = false
         setRevealed(false)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
@@ -434,7 +476,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func reveal(pinned: Bool = false, peekFor seconds: TimeInterval = 0) {
         guard isPresent else { return }
-        hideHint()
         if pinned { self.pinned = true }
         if seconds > 0 { peekUntil = Date().addingTimeInterval(seconds) }
         awaySince = nil
@@ -462,7 +503,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             pinned = false
             peekUntil = .distantPast
             line.hoveredID = nil
-            hideHint()
             panel.ignoresMouseEvents = true
             // Opened on purpose lasts until the line tucks away, however that
             // happens: an empty line then goes, as with the shortcut, and over
@@ -552,22 +592,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let mouse = NSEvent.mouseLocation
         let now = Date()
 
-        let previousY = previousMouseY
-        previousMouseY = mouse.y
-        if snapping {
-            updateSnap(now)
-            return
-        }
         let screenUnderPointer = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
         let inMenuBar = screenUnderPointer.map { NSMouseInRect(mouse, Self.menuBarBand(of: $0), false) } ?? false
         if !inMenuBar { menuBarSuppressed = false }
 
         guard isRevealed else {
-            updateTopCenterHint(mouse: mouse, screen: screenUnderPointer, now: now, previousY: previousY)
+            updateTopCenterHint(mouse: mouse, screen: screenUnderPointer, now: now)
             return
         }
 
-        hideHint()
         updateMousePassThrough(mouse)
 
         // The line's zone runs from its lowest point up to the top of the
@@ -594,95 +627,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The pointer resting at the top center only shows the hint. The hint
     /// follows the pointer upward, and the line is woken only when the
     /// pointer reaches the top edge after climbing from where it entered.
-    private func updateTopCenterHint(mouse: NSPoint, screen: NSScreen?, now: Date, previousY: CGFloat?) {
+    /// The pointer resting at the top center wakes the line: entering the
+    /// zone starts the clock, moving up towards the top edge is the gesture,
+    /// and reaching the top edge drops the line. No hint panel, no animation.
+    private func updateTopCenterHint(mouse: NSPoint, screen: NSScreen?, now: Date) {
         guard Self.opensFromTopCenter, let screen,
               !menuBarSuppressed,
-              !FullScreen.blocksLine(on: screen) else {
+              !FullScreen.blocksLine(on: screen),
+              line.liveCount > 0 else {
             resetTopCenterHint()
             return
         }
 
-        // Once visible, the hint keeps a slightly larger zone. A small
-        // deadband plus a short grace stops edge jitter from flickering it.
-        let showZone = Self.topCenterZone(of: screen)
-        let keepZone = showZone.insetBy(dx: -14, dy: -14)
-        let inside = NSMouseInRect(mouse, topCenterSince == nil ? showZone : keepZone, false)
-        if !inside {
-            if topCenterSince != nil {
-                let since = hintLeaveSince ?? now
-                hintLeaveSince = since
-                if now.timeIntervalSince(since) < Self.hintLeaveGrace { return }
-            }
+        let zone = Self.topCenterZone(of: screen)
+        guard NSMouseInRect(mouse, zone, false) else {
             resetTopCenterHint()
             return
         }
-        hintLeaveSince = nil
-
         if topCenterSince == nil {
             topCenterSince = now
             topCenterMovedUp = false
-            stageOneHapticFired = false
-            hintShownProgress = min(1, max(0, (mouse.y - showZone.minY) / max(1, showZone.height)))
         }
         guard let since = topCenterSince else { return }
-        if let previousY, mouse.y > previousY + 0.5 { topCenterMovedUp = true }
-
-        // The mini line is only useful when there is something on the line.
-        guard line.liveCount > 0 else {
-            resetTopCenterHint()
-            return
-        }
-
-        let target = min(1, max(0, (mouse.y - showZone.minY) / max(1, showZone.height)))
-        // A low-pass filter makes the sag follow the pointer instead of
-        // trembling with every small uncertain movement.
-        hintShownProgress += (target - hintShownProgress) * 0.22
-        // The first detent lands at the moment the little line goes taut:
-        // halfway through the pull. Stage two then retracts it.
-        if hintShownProgress >= 0.5, !stageOneHapticFired {
-            stageOneHapticFired = true
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
-        }
-        hintPanel.show(on: screen, progress: hintShownProgress)
+        if mouse.y > zone.minY + zone.height * 0.5 { topCenterMovedUp = true }
 
         guard mouse.y >= screen.frame.maxY - Self.topCenterWakeBand,
               topCenterMovedUp,
               now.timeIntervalSince(since) >= Self.topCenterMinimumHint else { return }
 
-        // The line is taut. Let it twang and flash for a moment before the
-        // main line actually drops.
-        snapping = true
-        snapStartedAt = now
-        snapScreen = screen
+        topCenterSince = nil
+        topCenterMovedUp = false
+        if line.soundOn { Line.playWake() }
         NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
-        if line.soundOn {
-            snapPlayer?.currentTime = 0
-            snapPlayer?.play()
-        }
-        hintShownProgress = 1
-        topCenterSince = nil
-        topCenterMovedUp = false
-        hintPanel.show(on: screen, progress: 1, snap: 0)
-    }
-
-    private func updateSnap(_ now: Date) {
-        guard let start = snapStartedAt, let screen = snapScreen else {
-            snapping = false
-            return
-        }
-        let phase = min(1, now.timeIntervalSince(start) / Self.snapDuration)
-        hintPanel.show(on: screen, progress: 1, snap: phase)
-        if pullCursorPushed { HoverHintPanel.pullCursor.set() }
-        guard phase >= 1 else { return }
-        snapping = false
-        snapStartedAt = nil
-        snapScreen = nil
-        topCenterSince = nil
-        topCenterMovedUp = false
-        hintShownProgress = 0
-        hintLeaveSince = nil
-        stageOneHapticFired = false
-        hideHint()
         if panel.screen != screen {
             panel.placeOnScreen(screen)
             updateCapacity()
@@ -693,23 +669,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func resetTopCenterHint() {
-        snapping = false
-        snapStartedAt = nil
-        snapScreen = nil
         topCenterSince = nil
         topCenterMovedUp = false
-        hintShownProgress = 0
-        hintLeaveSince = nil
-        stageOneHapticFired = false
-        hideHint()
-    }
-
-    private func hideHint() {
-        if pullCursorPushed {
-            NSCursor.pop()
-            pullCursorPushed = false
-        }
-        hintPanel?.hide()
     }
 
     /// The panel spans the whole width of the screen, so it only accepts the
@@ -859,6 +820,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         clipboard.state = ClipboardWatcher.isEnabled ? .on : .off
         clipboard.toolTip = L("Images you copy hang on the line too")
         menu.addItem(clipboard)
+
+        let phone = ClosureMenuItem(L("Sync iPhone screenshots")) { [weak self] in
+            guard let self else { return }
+            PhoneSync.isEnabled.toggle()
+            self.setPhoneWatching(PhoneSync.isEnabled)
+        }
+        phone.state = PhoneSync.isEnabled ? .on : .off
+        phone.toolTip = L("Screenshots from the iPhone shortcut in iCloud Drive/Tendedero hang on the line")
+        menu.addItem(phone)
 
         let bringDown = NSMenuItem(title: L("Bring the line down"), action: nil, keyEquivalent: "")
         let options = NSMenu()

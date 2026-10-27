@@ -87,10 +87,13 @@ final class Line: ObservableObject {
 
     // MARK: Hanging and dropping
 
+    /// Hangs a photo. The thumbnail is usually decoded before this is
+    /// called, off the main thread, so two captures arriving together do not
+    /// make the line stutter while it comes down.
     @discardableResult
-    func hang(_ url: URL, quietly: Bool = false, flying: Bool = false) -> UUID? {
+    func hang(_ url: URL, quietly: Bool = false, flying: Bool = false, thumb premade: NSImage? = nil) -> UUID? {
         guard !items.contains(where: { $0.url == url && !$0.falling }),
-              let thumb = makeThumbnail(url) else { return nil }
+              let thumb = premade ?? makeThumbnail(url) else { return nil }
         var item = Pegged(url: url, thumb: thumb)
         item.flying = flying
         items.append(item)
@@ -348,6 +351,15 @@ final class Line: ObservableObject {
         sound.play()
     }
 
+    /// The short chime when the pointer wakes the line from the top edge.
+    /// A system sound through a fresh copy each time, so a wake can overlap
+    /// the sounds a hanging photo makes.
+    static func playWake() {
+        guard let sound = NSSound(named: "Tink")?.copy() as? NSSound else { return }
+        sound.volume = 0.5
+        sound.play()
+    }
+
     private func pngData(_ url: URL) -> Data? {
         if url.pathExtension.lowercased() == "png" { return try? Data(contentsOf: url) }
         guard let tiff = NSImage(contentsOf: url)?.tiffRepresentation,
@@ -383,3 +395,43 @@ private func firstFrame(_ url: URL, maxPixels: Int) -> NSImage? {
     guard let cg = try? generator.copyCGImage(at: .zero, actualTime: nil) else { return nil }
     return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
 }
+
+/// Decodes a thumbnail off the main thread, one capture at a time so the
+/// order they arrive in is kept. Several watchers can report at once —
+/// clipboard, screenshots, the phone over iCloud — and two decodes together
+/// were long enough to make the line stutter as it came down.
+nonisolated func decodeThumbnail(
+    _ url: URL, maxPixels: Int = Int(320 * Layout.size.scale),
+    then: @escaping @MainActor (NSImage?) -> Void
+) {
+    decodeChain.enqueue {
+        let thumb = makeThumbnail(url, maxPixels: maxPixels)
+        Task { @MainActor in then(thumb) }
+    }
+}
+
+/// Keeps the order the captures arrived in: each decode waits for the one
+/// before it.
+private let decodeChain = DecodeChain()
+
+/// A serial hand-off for background thumbnail decodes.
+private final class DecodeChain: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "tendedero.decode", qos: .userInitiated)
+    private let lock = NSLock()
+    private var last: DispatchWorkItem?
+
+    /// Runs `work` off the main thread, after every previous decode.
+    func enqueue(_ work: @escaping () -> Void) {
+        lock.lock()
+        let previous = last
+        let item = DispatchWorkItem(block: work)
+        last = item
+        lock.unlock()
+        if let previous {
+            previous.notify(queue: queue, execute: item)
+        } else {
+            queue.async(execute: item)
+        }
+    }
+}
+
