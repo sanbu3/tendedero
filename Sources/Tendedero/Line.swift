@@ -351,13 +351,28 @@ final class Line: ObservableObject {
         sound.play()
     }
 
-    /// The short chime when the pointer wakes the line from the top edge.
-    /// A system sound through a fresh copy each time, so a wake can overlap
-    /// the sounds a hanging photo makes.
+    /// The soft thump when the pointer wakes the line from the top edge.
+    /// A bundled sound played through its own player, so a wake can overlap
+    /// the sounds a hanging photo makes and rapid wakes restart cleanly.
+    private static let wakePlayer: AVAudioPlayer? = {
+        // The build script puts sounds in Contents/Resources/sounds/, a
+        // subdirectory Bundle.main.url does not search by default.
+        let url = Bundle.main.url(forResource: "wake-thump", withExtension: "mp3", subdirectory: "sounds")
+            ?? Bundle.main.url(forResource: "wake-thump", withExtension: "mp3")
+        guard let url, let player = try? AVAudioPlayer(contentsOf: url) else {
+            log.error("Wake thump missing from the bundle")
+            return nil
+        }
+        player.volume = 0.55
+        player.prepareToPlay()
+        log.notice("Wake thump ready, duration \(player.duration, privacy: .public)")
+        return player
+    }()
+
     static func playWake() {
-        guard let sound = NSSound(named: "Tink")?.copy() as? NSSound else { return }
-        sound.volume = 0.5
-        sound.play()
+        guard let player = wakePlayer else { return }
+        player.currentTime = 0
+        player.play()
     }
 
     private func pngData(_ url: URL) -> Data? {
