@@ -24,8 +24,6 @@ final class Held: NSObject {
     private let image: NSImage
     /// The size it had before it went small, to come back to.
     private var fullFrame: NSRect?
-    /// The drag of the file itself, while it lasts.
-    private var dragSource: FileDragSource?
     /// Its size at 100%, in points.
     private let natural: NSSize
     /// The frame-by-frame slide off the line, while it runs.
@@ -96,10 +94,10 @@ final class Held: NSObject {
         view.onCopy = { line.copy(id) }
         view.onMarkup = { line.markup(id) }
         view.onQuickLook = { line.quickLook(id) }
-        view.onRelease = { [weak self] in self?.releaseFileIcon() }
-        view.onLongPress = { [weak self, weak view] (event: NSEvent) in
+        view.onRelease = { [weak self] in self?.releasePage() }
+        view.onLongPress = { [weak self, weak view] (_: NSEvent) in
             guard let self, let view else { return }
-            self.shrinkToIcon(event: event, from: view)
+            self.shrinkToIcon(from: view)
         }
         // Stretched from an edge or a corner, it keeps the photo's shape.
         panel.minSize = NSSize(width: 80, height: 80)
@@ -195,10 +193,10 @@ final class Held: NSObject {
 
     /// Held down, it turns into the file itself: the photo, whole and in
     /// proportion, on a small page. The pointer holds it by its bottom right
-    /// corner, the way a file comes out of the Finder, and it goes where it
-    /// is let go.
-    private func shrinkToIcon(event: NSEvent, from view: HeldView) {
-        guard dragSource == nil, fullFrame == nil else { return }
+    /// corner, the way a file comes out of the Finder, and it goes where the
+    /// hand takes it. Letting go brings the photo back.
+    private func shrinkToIcon(from view: HeldView) {
+        guard fullFrame == nil else { return }
         guard let icon = Self.fileIcon(image) else { return }
         fullFrame = panel.frame
         let cursor = NSEvent.mouseLocation
@@ -208,40 +206,44 @@ final class Held: NSObject {
                             width: icon.size.width, height: icon.size.height)
         panel.contentAspectRatio = .zero
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.14
+            context.duration = 0.12
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().setFrame(target, display: true)
         }, completionHandler: { [weak self] in
             guard let self else { return }
-            self.startFileDrag(icon: icon, event: event, from: view)
+            // The animator can land a point or two off; the page is exactly
+            // where the hand expects it.
+            panel.setFrame(target, display: false)
+            view.showPage(icon)
+            view.beginPageDrag()
         })
     }
 
-    /// The picture on a small white page: what an image file looks like in
-    /// the Finder, and what is carried now.
+    /// The picture with a white border: what an image file looks like in the
+    /// Finder. The page takes the picture's own shape, so nothing is cropped
+    /// and nothing is stretched.
     private static func fileIcon(_ image: NSImage) -> NSImage? {
-        let page = NSSize(width: 88, height: 112)
         let size = image.size
         guard size.width > 0, size.height > 0 else { return nil }
+        let border: CGFloat = 5
+        let longest: CGFloat = 108
+        let scale = longest / max(size.width, size.height)
+        let inner = NSSize(width: max(24, size.width * scale), height: max(24, size.height * scale))
+        let page = NSSize(width: inner.width + border * 2, height: inner.height + border * 2)
         let icon = NSImage(size: page)
         icon.lockFocus()
         defer { icon.unlockFocus() }
         let rect = NSRect(origin: .zero, size: page)
-        let pagePath = NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 7, yRadius: 7)
+        let pagePath = NSBezierPath(roundedRect: rect, xRadius: 9, yRadius: 9)
         NSColor.white.setFill()
         pagePath.fill()
-        // The picture, whole and in proportion, inside the page.
-        let margin: CGFloat = 7
-        let inner = rect.insetBy(dx: margin, dy: margin)
-        let scale = min(inner.width / size.width, inner.height / size.height)
-        let w = size.width * scale, h = size.height * scale
-        let photo = NSRect(x: inner.midX - w / 2, y: inner.midY - h / 2, width: w, height: h)
-        let photoPath = NSBezierPath(roundedRect: photo, xRadius: 3, yRadius: 3)
+        let photo = rect.insetBy(dx: border, dy: border)
+        let photoPath = NSBezierPath(roundedRect: photo, xRadius: 4, yRadius: 4)
         NSGraphicsContext.saveGraphicsState()
         photoPath.addClip()
         image.draw(in: photo, from: .zero, operation: .sourceOver, fraction: 1)
         NSGraphicsContext.restoreGraphicsState()
-        NSColor.black.withAlphaComponent(0.18).setStroke()
+        NSColor.black.withAlphaComponent(0.2).setStroke()
         photoPath.lineWidth = 0.5
         photoPath.stroke()
         NSColor.black.withAlphaComponent(0.12).setStroke()
@@ -250,39 +252,14 @@ final class Held: NSObject {
         return icon
     }
 
-    /// The file, under the pointer, to drop where it is let go.
-    private func startFileDrag(icon: NSImage, event: NSEvent, from view: HeldView) {
-        // Let go while the photo was still shrinking: nothing to drag.
-        guard NSEvent.pressedMouseButtons & 1 != 0 else {
-            endFileDrag()
-            return
-        }
-        let source = FileDragSource(url: url) { [weak self] in self?.endFileDrag() }
-        dragSource = source
-        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
-        item.setDraggingFrame(NSRect(origin: .zero, size: icon.size), contents: icon)
-        let session = view.beginDraggingSession(with: [item], event: event, source: source)
-        session.animatesToStartingPositionsOnCancelOrFail = false
-        // The icon under the pointer is the photo now; the window waits it out.
-        panel.orderOut(nil)
-    }
-
-    /// The button was let go before the file could be carried: the photo
-    /// comes straight back rather than staying small.
-    private func releaseFileIcon() {
-        guard fullFrame != nil, dragSource == nil else { return }
-        endFileDrag()
-    }
-
     /// Let go: the photo is back, the size it was.
-    private func endFileDrag() {
-        dragSource = nil
+    private func releasePage() {
         guard let full = fullFrame else { return }
         fullFrame = nil
+        view.hidePage()
         panel.contentAspectRatio = natural
-        panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.2
+            context.duration = 0.18
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().setFrame(full, display: true)
         }
@@ -359,6 +336,11 @@ private final class HeldView: NSVisualEffectView {
     private let image: NSImage
     private let url: URL
     private let photo = CALayer()
+    /// The small page the photo turns into while it is carried.
+    private let page = CALayer()
+    private var pageMode = false
+    private var pageStart: NSPoint?
+    private var pageOrigin: NSPoint?
     private let hangBackButton = CornerButton(symbol: "arrow.up.to.line")
     private let textButton = CornerButton(symbol: "text.viewfinder")
     /// The text read from the picture, and the two lights over it: everything
@@ -403,6 +385,8 @@ private final class HeldView: NSVisualEffectView {
         photo.cornerRadius = 7
         photo.masksToBounds = true
         layer?.addSublayer(photo)
+        page.isHidden = true
+        layer?.addSublayer(page)
         // Everything the picture has to offer, and what is picked of it.
         for light in [standing, pickLayer] {
             light.isHidden = true
@@ -413,6 +397,7 @@ private final class HeldView: NSVisualEffectView {
         // The ring that fills while the button is held down.
         holdRing.isHidden = true
         holdRing.fillColor = nil
+        holdRing.actions = ["path": NSNull(), "strokeEnd": NSNull(), "hidden": NSNull(), "opacity": NSNull()]
         holdRing.strokeColor = NSColor.controlAccentColor.cgColor
         holdRing.lineWidth = 2.5
         holdRing.lineCap = .round
@@ -440,6 +425,14 @@ private final class HeldView: NSVisualEffectView {
         CATransaction.commit()
         textButton.frame = NSRect(x: 9, y: bounds.height - 29, width: 20, height: 20)
         hangBackButton.frame = NSRect(x: bounds.width - 29, y: bounds.height - 29, width: 20, height: 20)
+        if pageMode {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            page.frame = bounds
+            page.contentsScale = window?.backingScaleFactor ?? 2
+            CATransaction.commit()
+            return
+        }
         // The lights follow the picture as the window is stretched.
         drawStanding()
         drawPick()
@@ -559,6 +552,44 @@ private final class HeldView: NSVisualEffectView {
         return true
     }
 
+    // MARK: Carrying the file
+
+    /// Small and in your hand: the photo is the page now.
+    func showPage(_ icon: NSImage) {
+        pageMode = true
+        page.contents = icon
+        page.frame = bounds
+        page.contentsScale = window?.backingScaleFactor ?? 2
+        page.isHidden = false
+        photo.isHidden = true
+        standing.isHidden = true
+        pickLayer.isHidden = true
+        holdRing.isHidden = true
+        hangBackButton.isHidden = true
+        textButton.isHidden = true
+        layer?.borderWidth = 0
+        layer?.cornerRadius = 9
+        NSCursor.arrow.set()
+    }
+
+    /// The photo again, at its size.
+    func hidePage() {
+        pageMode = false
+        page.isHidden = true
+        photo.isHidden = false
+        hangBackButton.isHidden = false
+        textButton.isHidden = false
+        layer?.borderWidth = 0.5
+        layer?.cornerRadius = 12
+        drawStanding()
+    }
+
+    /// Where the window is while the hand carries the page.
+    func beginPageDrag() {
+        pageStart = NSEvent.mouseLocation
+        pageOrigin = window?.frame.origin
+    }
+
     // MARK: Moving and holding
 
     override func updateTrackingAreas() {
@@ -656,22 +687,36 @@ private final class HeldView: NSVisualEffectView {
         let radius: CGFloat = 13
         let circle = CGPath(ellipseIn: NSRect(x: pressAt.x - radius, y: pressAt.y - radius,
                                               width: radius * 2, height: radius * 2), transform: nil)
+        // No implicit animations here: a jump to the full ring for one frame
+        // read as a flash.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         holdRing.removeAllAnimations()
         holdRing.path = circle
+        holdRing.strokeStart = 0
         holdRing.strokeEnd = 0
         holdRing.isHidden = false
+        CATransaction.commit()
         let fill = CABasicAnimation(keyPath: "strokeEnd")
         fill.fromValue = 0
         fill.toValue = 1
-        fill.duration = duration
+        fill.duration = max(0.2, duration)
+        fill.timingFunction = CAMediaTimingFunction(name: .linear)
         fill.isRemovedOnCompletion = false
         holdRing.add(fill, forKey: "hold")
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         holdRing.strokeEnd = 1
+        CATransaction.commit()
     }
 
     private func hideRing() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         holdRing.removeAllAnimations()
+        holdRing.strokeEnd = 0
         holdRing.isHidden = true
+        CATransaction.commit()
     }
 
     private func endPress() {
@@ -685,6 +730,11 @@ private final class HeldView: NSVisualEffectView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if let from = pageStart, let origin = pageOrigin {
+            let now = NSEvent.mouseLocation
+            window?.setFrameOrigin(NSPoint(x: origin.x + now.x - from.x, y: origin.y + now.y - from.y))
+            return
+        }
         if let start = pickingFrom {
             updatePick(from: start, to: convert(event.locationInWindow, from: nil))
             return
@@ -703,6 +753,12 @@ private final class HeldView: NSVisualEffectView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if pageMode {
+            pageStart = nil
+            pageOrigin = nil
+            onRelease()
+            return
+        }
         if let start = pickingFrom {
             updatePick(from: start, to: convert(event.locationInWindow, from: nil))
             pickingFrom = nil
@@ -749,6 +805,16 @@ private final class HeldView: NSVisualEffectView {
 
     override func keyDown(with event: NSEvent) {
         guard !event.isARepeat else { return }
+        // While the file is carried: ⌘C or C copies the file, Escape puts the
+        // photo back.
+        if pageMode {
+            if event.keyCode == 53 {
+                onRelease()
+            } else if event.charactersIgnoringModifiers == "c" {
+                copyFile()
+            }
+            return
+        }
         if event.keyCode == 53 {
             // Escape first puts down what was picked, then the photo itself.
             if !picked.isEmpty {
@@ -781,6 +847,14 @@ private final class HeldView: NSVisualEffectView {
 
     override func rightMouseDown(with event: NSEvent) {
         let menu = NSMenu()
+        if pageMode {
+            menu.addItem(ClosureMenuItem(L("Copy")) { [weak self] in self?.copyFile() })
+            menu.addItem(ClosureMenuItem(L("Share")) { [weak self] in self?.shareFile() })
+            menu.addItem(.separator())
+            menu.addItem(ClosureMenuItem(L("Back to the photo")) { [weak self] in self?.onRelease() })
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+            return
+        }
         if !picked.isEmpty {
             menu.addItem(ClosureMenuItem(L("Copy text")) { [weak self] in _ = self?.copyPick() })
             menu.addItem(.separator())
@@ -794,31 +868,22 @@ private final class HeldView: NSVisualEffectView {
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
+    /// The file on the clipboard, to paste in the Finder or anywhere else.
+    private func copyFile() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([url as NSURL])
+        FlashWord.show(L("Copied"), in: self)
+    }
+
+    private func shareFile() {
+        NSSharingServicePicker(items: [url]).show(relativeTo: bounds, of: self, preferredEdge: .minY)
+    }
+
     /// A small word over the photo, for a moment: what just happened.
     private func flash(_ text: String) {
         FlashWord.show(text, in: self)
     }
-}
-
-/// The file being carried by the pointer, until it is let go.
-private final class FileDragSource: NSObject, NSDraggingSource {
-    let url: URL
-    private let onEnd: () -> Void
-
-    init(url: URL, onEnd: @escaping () -> Void) {
-        self.url = url
-        self.onEnd = onEnd
-    }
-
-    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        [.copy, .generic]
-    }
-
-    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        onEnd()
-    }
-
-    func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { false }
 }
 
 /// A small word over a view for a moment: what just happened.
