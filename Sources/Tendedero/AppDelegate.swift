@@ -452,12 +452,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// How many times each not-yet-synced file has been retried.
     private var iCloudWaitCount: [String: Int] = [:]
 
-    private func fly(_ id: UUID, from: CGRect) {
+    private func fly(_ id: UUID, from: CGRect, image: NSImage? = nil) {
         guard isPresent, isRevealed, !Self.reducesMotion, CaptureFlight.flightsInProgress < 2,
               let screen = panel.screen,
               let to = cardFrame(for: id),
               let item = line.items.first(where: { $0.id == id }) else {
             line.land(id)
+            return
+        }
+        // A photo coming back from the hand is already drawn at the right
+        // size: it must not wait for a decode, or it goes missing for a frame.
+        if let image, let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            CaptureFlight.fly(image: cg, from: from, to: to, tilt: CGFloat(item.tilt), on: screen) {
+                self.line.land(id)
+            }
             return
         }
         // Sharp enough while it starts out at the captured size, which a
@@ -831,17 +839,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Where it hangs now: the photo slides down from there.
         let from = cardFrame(for: id)
         line.setHeld(id, true)
-        Held.show(id, url: item.url, line: line, from: from) { [weak self] id, frame in
-            self?.hangBack(id, from: frame)
+        Held.show(id, url: item.url, line: line, from: from) { [weak self] id, frame, image in
+            self?.hangBack(id, from: frame, image: image)
         }
     }
 
-    /// Back onto its clip: the line comes down and the photo flies home.
-    private func hangBack(_ id: UUID, from frame: CGRect) {
+    /// Back onto its clip: the line comes down and the photo flies home. The
+    /// flight starts with the very image that was in the hand and takes over
+    /// from the panel as it goes, so the photo never blinks between the two.
+    private func hangBack(_ id: UUID, from frame: CGRect, image: NSImage) {
+        // Only a photo actually in hand comes back: a burst of scroll events
+        // must not launch it twice.
+        guard line.items.contains(where: { $0.id == id && $0.held }) else { return }
         line.setHeld(id, false)
         comeDown(on: NSScreen.screens.first { $0.frame.intersects(frame) })
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
-            self?.fly(id, from: frame)
+            guard let self else { return }
+            self.fly(id, from: frame, image: image)
+            // The flight's window is up: the hand's can go without the photo
+            // ever being missing from the screen.
+            DispatchQueue.main.async { Held.letGo(id) }
         }
     }
 

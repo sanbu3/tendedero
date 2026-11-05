@@ -37,7 +37,10 @@ struct PeggedView: View {
         // The fall itself is drawn over the whole screen by CaptureFlight, so
         // the card here just steps aside at once.
         .opacity(item.falling || item.flying ? 0 : (arrived ? 1 : 0))
-        .transaction { t in if item.falling { t.animation = nil } }
+        // Leaving is at once: the flight or the fall draws it from here on,
+        // and a card fading out underneath would read as a flicker. Arriving
+        // still fades in.
+        .transaction { t in if item.falling || item.flying { t.animation = nil } }
         .animation(.easeOut(duration: 0.16), value: item.flying)
         .onAppear(perform: arrive)
         .onChange(of: item.flying) { was, now in if was && !now { land() } }

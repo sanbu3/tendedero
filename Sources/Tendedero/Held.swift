@@ -18,20 +18,25 @@ final class Held: NSObject {
     let id: UUID
     private let panel: HeldPanel
     private let view: HeldView
+    /// What it shows, kept so the flight back to the line can start at once.
+    private let image: NSImage
     /// Its size at 100%, in points.
     private let natural: NSSize
     /// The frame-by-frame slide off the line, while it runs.
     private var slideTimer: Timer?
     private var animationStart: CFTimeInterval = 0
-    /// Called with where it was on screen, to fly back to its clip from there.
-    private let onHangBack: (UUID, CGRect) -> Void
+    /// One hand back at a time: the wheel can send a burst.
+    private var isHangingBack = false
+    /// Called with where it was on screen and what it showed, to fly back to
+    /// its clip from there.
+    private let onHangBack: (UUID, CGRect, NSImage) -> Void
 
     static var heldIDs: Set<UUID> { Set(open.keys) }
 
     /// `from` is where the card hangs on the line, so the photo can slide
     /// off it; without it, the photo simply opens in the middle.
     static func show(_ id: UUID, url: URL, line: Line, from: NSRect? = nil,
-                     onHangBack: @escaping (UUID, CGRect) -> Void) {
+                     onHangBack: @escaping (UUID, CGRect, NSImage) -> Void) {
         guard open[id] == nil,
               let screen = LinePanel.screenUnderPointer() else { return }
         // No sharper than the screen can show, so a huge image stays light.
@@ -50,16 +55,15 @@ final class Held: NSObject {
     /// Its photo left the line some other way: the file moved, for example.
     static func forget(except live: Set<UUID>) {
         for (id, held) in open where !live.contains(id) {
-            held.slideTimer?.invalidate()
-            held.slideTimer = nil
-            held.panel.close()
+            held.close()
             open[id] = nil
         }
     }
 
     private init(id: UUID, url: URL, image: NSImage, on screen: NSScreen, line: Line,
-                 from: NSRect?, onHangBack: @escaping (UUID, CGRect) -> Void) {
+                 from: NSRect?, onHangBack: @escaping (UUID, CGRect, NSImage) -> Void) {
         self.id = id
+        self.image = image
         self.onHangBack = onHangBack
         let scale = screen.backingScaleFactor
         natural = NSSize(width: image.size.width / scale + HeldView.border * 2,
@@ -165,13 +169,26 @@ final class Held: NSObject {
                               width: natural.width, height: natural.height), display: true)
     }
 
+    /// Hands it to the flight: the window stays until the app says the photo
+    /// is flying, so there is no blink between the two.
     private func hangBack() {
+        guard !isHangingBack else { return }
+        isHangingBack = true
         slideTimer?.invalidate()
         slideTimer = nil
-        let frame = panel.frame
+        onHangBack(id, panel.frame, image)
+    }
+
+    /// The flight is drawing the photo now: the window can go.
+    fileprivate func close() {
+        slideTimer?.invalidate()
+        slideTimer = nil
         panel.close()
-        Self.open[id] = nil
-        onHangBack(id, frame)
+    }
+
+    static func letGo(_ id: UUID) {
+        open[id]?.close()
+        open[id] = nil
     }
 }
 
@@ -344,7 +361,8 @@ private final class HeldView: NSVisualEffectView {
             onZoom(1 + step, NSEvent.mouseLocation.clamped(to: window.frame))
             return
         }
-        guard device > 0 else {
+        // The tail of a gesture must not send it away twice.
+        guard device > 0, event.momentumPhase.isEmpty else {
             hangBackPull = 0
             return
         }
