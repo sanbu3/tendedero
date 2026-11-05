@@ -24,6 +24,8 @@ final class Held: NSObject {
     private let image: NSImage
     /// The size it had before it went small, to come back to.
     private var fullFrame: NSRect?
+    /// The system drag of the file, while it lasts.
+    private var dragSource: FileDragSource?
     /// Its size at 100%, in points.
     private let natural: NSSize
     /// The frame-by-frame slide off the line, while it runs.
@@ -95,9 +97,9 @@ final class Held: NSObject {
         view.onMarkup = { line.markup(id) }
         view.onQuickLook = { line.quickLook(id) }
         view.onRelease = { [weak self] in self?.releasePage() }
-        view.onLongPress = { [weak self, weak view] (_: NSEvent) in
+        view.onLongPress = { [weak self, weak view] event in
             guard let self, let view else { return }
-            self.shrinkToIcon(from: view)
+            self.shrinkToIcon(event: event, from: view)
         }
         // Stretched from an edge or a corner, it keeps the photo's shape.
         panel.minSize = NSSize(width: 80, height: 80)
@@ -195,7 +197,7 @@ final class Held: NSObject {
     /// proportion, on a small page. The pointer holds it by its bottom right
     /// corner, the way a file comes out of the Finder, and it goes where the
     /// hand takes it. Letting go brings the photo back.
-    private func shrinkToIcon(from view: HeldView) {
+    private func shrinkToIcon(event: NSEvent, from view: HeldView) {
         guard fullFrame == nil else { return }
         guard let icon = Self.fileIcon(image) else { return }
         fullFrame = panel.frame
@@ -216,6 +218,7 @@ final class Held: NSObject {
             panel.setFrame(target, display: false)
             view.showPage(icon)
             view.beginPageDrag()
+            self.startFileDrag(icon: icon, event: event, from: view)
         })
     }
 
@@ -250,6 +253,33 @@ final class Held: NSObject {
         pagePath.lineWidth = 1
         pagePath.stroke()
         return icon
+    }
+
+    /// Hands the page to the system as a file drag: other apps light up as
+    /// drop targets, and the file lands where it is let go. Our window steps
+    /// aside while the drag image carries the same page.
+    private func startFileDrag(icon: NSImage, event: NSEvent, from view: HeldView) {
+        guard NSEvent.pressedMouseButtons & 1 != 0 else {
+            releasePage()
+            return
+        }
+        let source = FileDragSource(url: url) { [weak self] in self?.endFileDrag() }
+        dragSource = source
+        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+        item.setDraggingFrame(NSRect(origin: .zero, size: icon.size), contents: icon)
+        let session = view.beginDraggingSession(with: [item], event: event, source: source)
+        session.animatesToStartingPositionsOnCancelOrFail = false
+        // The drag image carries the page now; the window steps aside without
+        // leaving the screen, which would cancel the drag with it.
+        panel.alphaValue = 0
+    }
+
+    private func endFileDrag() {
+        dragSource = nil
+        guard fullFrame != nil else { return }
+        panel.alphaValue = 1
+        panel.orderFrontRegardless()
+        releasePage()
     }
 
     /// Let go: the photo is back, the size it was.
@@ -810,6 +840,8 @@ private final class HeldView: NSVisualEffectView {
         if pageMode {
             if event.keyCode == 53 {
                 onRelease()
+            } else if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "w" {
+                onHangBack()
             } else if event.charactersIgnoringModifiers == "c" {
                 copyFile()
             }
@@ -822,6 +854,11 @@ private final class HeldView: NSVisualEffectView {
             } else {
                 onHangBack()
             }
+            return
+        }
+        // ⌘W hands the photo back to the line, as closing a window would.
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "w" {
+            onHangBack()
             return
         }
         let plain = event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
@@ -884,6 +921,27 @@ private final class HeldView: NSVisualEffectView {
     private func flash(_ text: String) {
         FlashWord.show(text, in: self)
     }
+}
+
+/// The file being dragged by the pointer, until it is let go.
+private final class FileDragSource: NSObject, NSDraggingSource {
+    let url: URL
+    private let onEnd: () -> Void
+
+    init(url: URL, onEnd: @escaping () -> Void) {
+        self.url = url
+        self.onEnd = onEnd
+    }
+
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        [.copy, .generic]
+    }
+
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        onEnd()
+    }
+
+    func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { false }
 }
 
 /// A small word over a view for a moment: what just happened.
