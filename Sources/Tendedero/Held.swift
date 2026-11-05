@@ -1,4 +1,5 @@
 import AppKit
+import Vision
 
 /// A photo taken off the line to keep in front of you while you work: a
 /// design to copy, numbers to type in, steps to follow. It is the photo
@@ -77,6 +78,9 @@ final class Held: NSObject {
         let target = startFrame(on: screen)
         panel.setFrame(from ?? target, display: false)
         panel.orderFrontRegardless()
+        // Holding it means it takes the keys: Escape and ⌘C work at once, and
+        // the first drag is a drag, not the click that makes it key.
+        panel.makeKey()
         if let from {
             slideIn(from: from, to: target)
         } else {
@@ -185,7 +189,9 @@ private final class HeldPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
-        isMovableByWindowBackground = true
+        // A click must reach the view the first time. Moving is done by the
+        // view, on a plain drag, once it knows the click is not a text pick.
+        isMovableByWindowBackground = false
         becomesKeyOnlyIfNeeded = false
         contentView = content
     }
@@ -194,9 +200,11 @@ private final class HeldPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// The photo in a glass frame like the cards on the line. Its only control
-/// is the button in the corner, which hangs it back, shown on hover like the
-/// cards' own; everything else is in its menu.
+/// The photo in a glass frame like the cards on the line. Dragging moves it;
+/// Command held, a drag picks out the text in the picture and copies it;
+/// scrolling up hands it back to the line. Its corner button, shown on
+/// hover like the cards' own, hangs it back too, and everything else is in
+/// its menu.
 private final class HeldView: NSVisualEffectView {
     static let border: CGFloat = 6
 
@@ -207,10 +215,17 @@ private final class HeldView: NSVisualEffectView {
     var onMarkup: () -> Void = {}
     var onQuickLook: () -> Void = {}
 
+    private let image: NSImage
     private let photo = CALayer()
     private let hangBackButton = CornerButton(symbol: "arrow.up.to.line")
+    /// The rectangle a Command-drag is picking out, and where it began.
+    private let selection = CAShapeLayer()
+    private var selectingFrom: NSPoint?
+    private var hangBackPull: CGFloat = 0
+    private var hangBackAt = Date.distantPast
 
     init(image: NSImage) {
+        self.image = image
         super.init(frame: .zero)
         material = .popover
         blendingMode = .behindWindow
@@ -225,6 +240,13 @@ private final class HeldView: NSVisualEffectView {
         photo.cornerRadius = 7
         photo.masksToBounds = true
         layer?.addSublayer(photo)
+        // The picking-out of text, over the photo.
+        selection.fillColor = NSColor.white.withAlphaComponent(0.16).cgColor
+        selection.strokeColor = NSColor.systemBlue.withAlphaComponent(0.9).cgColor
+        selection.lineWidth = 1
+        selection.lineDashPattern = [4, 3]
+        selection.isHidden = true
+        layer?.addSublayer(selection)
         hangBackButton.alphaValue = 0
         hangBackButton.onPress = { [weak self] in self?.onHangBack() }
         hangBackButton.setAccessibilityLabel(L("Hang back"))
@@ -264,17 +286,44 @@ private final class HeldView: NSVisualEffectView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var acceptsFirstResponder: Bool { true }
-    override var mouseDownCanMoveWindow: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
 
     override func mouseDown(with event: NSEvent) {
-        // A double click hands it back to the line.
+        let point = convert(event.locationInWindow, from: nil)
+        // A double click hands it back; with Option held, it is copied first.
         if event.clickCount == 2 {
+            if event.modifierFlags.contains(.option) { onCopy() }
             onHangBack()
             return
         }
+        // Command and a drag pick out the text in the picture, like Live Text.
+        if event.modifierFlags.contains(.command) {
+            window?.makeKey()
+            window?.makeFirstResponder(self)
+            selectingFrom = point
+            showSelection(from: point, to: point)
+            return
+        }
+        // Option on its own does nothing, so an Option double click stays put.
+        if event.modifierFlags.contains(.option) { return }
         window?.makeKey()
         window?.makeFirstResponder(self)
         window?.performDrag(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = selectingFrom else { return }
+        showSelection(from: start, to: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let start = selectingFrom else { return }
+        selectingFrom = nil
+        let end = convert(event.locationInWindow, from: nil)
+        showSelection(from: start, to: NSPoint(x: start.x, y: start.y))
+        let rect = Self.rect(from: start, to: end).intersection(photo.frame)
+        guard rect.width >= 4, rect.height >= 4 else { return }
+        copyText(in: rect)
     }
 
     override func magnify(with event: NSEvent) {
@@ -282,11 +331,120 @@ private final class HeldView: NSVisualEffectView {
         onZoom(1 + event.magnification, NSEvent.mouseLocation.clamped(to: window.frame))
     }
 
-    /// A mouse wheel zooms too: there is nothing to scroll in a photo.
+    /// Command and the wheel zoom, keeping the point under the pointer. A
+    /// plain scroll up hands the photo back to the line; down does nothing,
+    /// so brushing the wheel does not zoom or send it away.
     override func scrollWheel(with event: NSEvent) {
         guard let window, event.scrollingDeltaY != 0 else { return }
-        let step = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY * 0.005 : event.scrollingDeltaY * 0.05
-        onZoom(1 + step, NSEvent.mouseLocation.clamped(to: window.frame))
+        // The device's own direction, whichever way Natural Scrolling is set.
+        let device = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaY : event.scrollingDeltaY
+        if event.modifierFlags.contains(.command) {
+            let step = event.hasPreciseScrollingDeltas ? device * 0.005 : device * 0.05
+            onZoom(1 + step, NSEvent.mouseLocation.clamped(to: window.frame))
+            return
+        }
+        guard device > 0 else {
+            hangBackPull = 0
+            return
+        }
+        let now = Date()
+        if now.timeIntervalSince(hangBackAt) > 0.5 { hangBackPull = 0 }
+        hangBackAt = now
+        hangBackPull += device
+        guard hangBackPull >= 14 else { return }
+        hangBackPull = 0
+        onHangBack()
+    }
+
+    private func showSelection(from start: NSPoint, to end: NSPoint) {
+        let rect = Self.rect(from: start, to: end)
+        selection.path = CGPath(rect: rect, transform: nil)
+        selection.isHidden = rect.width < 1 && rect.height < 1
+    }
+
+    private static func rect(from a: NSPoint, to b: NSPoint) -> NSRect {
+        NSRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+    }
+
+    /// The part of the picture that was picked out, read with Vision and put
+    /// on the clipboard as plain text.
+    private func copyText(in rect: NSRect) {
+        let frame = photo.frame
+        guard frame.width > 0, frame.height > 0,
+              let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        let w = CGFloat(cg.width), h = CGFloat(cg.height)
+        // The photo is drawn to fit its frame, so the picture inside it may
+        // be letterboxed by a few points.
+        let scale = min(frame.width / w, frame.height / h)
+        let shown = NSRect(x: frame.midX - w * scale / 2, y: frame.midY - h * scale / 2,
+                           width: w * scale, height: h * scale)
+        let crop = CGRect(x: (rect.minX - shown.minX) / shown.width * w,
+                          y: (1 - (rect.maxY - shown.minY) / shown.height) * h,
+                          width: rect.width / shown.width * w,
+                          height: rect.height / shown.height * h).intersection(CGRect(x: 0, y: 0, width: w, height: h))
+        guard crop.width >= 1, crop.height >= 1, let part = cg.cropping(to: crop) else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let text = Self.text(in: part)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard !text.isEmpty else {
+                    self.flash(L("No text"))
+                    NSSound.beep()
+                    return
+                }
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(text, forType: .string)
+                self.flash(L("Copied"))
+            }
+        }
+    }
+
+    /// All the text Vision finds in the part, top to bottom.
+    private static func text(in image: CGImage) -> String {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        guard (try? handler.perform([request])) != nil else { return "" }
+        let lines = (request.results ?? [])
+            .sorted { $0.boundingBox.maxY > $1.boundingBox.maxY }
+            .compactMap { $0.topCandidates(1).first?.string }
+        return lines.joined(separator: "\n")
+    }
+
+    /// A small word over the photo, for a moment: what just happened.
+    private func flash(_ text: String) {
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        label.textColor = .white
+        label.alignment = .center
+        label.sizeToFit()
+        let pad: CGFloat = 9
+        let box = NSVisualEffectView(frame: NSRect(x: bounds.midX - (label.frame.width + pad * 2) / 2,
+                                                  y: bounds.midY - label.frame.height / 2 - pad,
+                                                  width: label.frame.width + pad * 2,
+                                                  height: label.frame.height + pad * 1.6))
+        box.material = .hudWindow
+        box.blendingMode = .withinWindow
+        box.state = .active
+        box.wantsLayer = true
+        box.layer?.cornerRadius = 8
+        label.frame.origin = NSPoint(x: pad, y: pad * 0.8)
+        box.addSubview(label)
+        box.alphaValue = 0
+        addSubview(box)
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.14
+            box.animator().alphaValue = 1
+        }, completionHandler: {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                NSAnimationContext.runAnimationGroup({ context in
+                    context.duration = 0.25
+                    box.animator().alphaValue = 0
+                }, completionHandler: { box.removeFromSuperview() })
+            }
+        })
     }
 
     override func keyDown(with event: NSEvent) {
