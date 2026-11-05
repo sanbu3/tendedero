@@ -41,6 +41,11 @@
 "When something new hangs" = "Cuando se cuelga algo nuevo";
 "Over full screen apps" = "Sobre apps a pantalla completa";
 "Hang copied images" = "Colgar imágenes copiadas";
+
+"Sync iPhone screenshots" = "Sincronizar capturas del iPhone";
+"Screenshots from the iPhone shortcut in iCloud Drive/Tendedero hang on the line" = "Las capturas que el atajo del iPhone guarde en iCloud Drive/Tendedero se cuelgan solas";
+"iCloud Drive is not available" = "iCloud Drive no está disponible";
+"Sign in to iCloud Drive and try again." = "Inicia sesión en iCloud Drive e inténtalo de nuevo.";
 "Images you copy hang on the line too" = "Las imágenes que copias también se cuelgan";
 "Tendedero, hanging copied images" = "Tendedero, colgando imágenes copiadas";
 "The line is empty" = "La cuerda está vacía";

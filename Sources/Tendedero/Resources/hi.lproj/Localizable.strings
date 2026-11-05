@@ -43,6 +43,11 @@
 "When something new hangs" = "जब कुछ नया टँगे";
 "Over full screen apps" = "फ़ुल स्क्रीन ऐप्स के ऊपर";
 "Hang copied images" = "कॉपी की गई तस्वीरें टाँगें";
+
+"Sync iPhone screenshots" = "iPhone स्क्रीनशॉट सिंक करें";
+"Screenshots from the iPhone shortcut in iCloud Drive/Tendedero hang on the line" = "iPhone शॉर्टकट द्वारा iCloud Drive/Tendedero में सहेजे गए स्क्रीनशॉट अपने आप टाँग दिए जाते हैं";
+"iCloud Drive is not available" = "iCloud Drive उपलब्ध नहीं है";
+"Sign in to iCloud Drive and try again." = "iCloud Drive में साइन इन करें और फिर से कोशिश करें।";
 "Images you copy hang on the line too" = "आप जो तस्वीरें कॉपी करते हैं, वे भी रस्सी पर टँगती हैं";
 "Tendedero, hanging copied images" = "Tendedero, कॉपी की गई तस्वीरें टाँग रहा है";
 "The line is empty" = "रस्सी खाली है";

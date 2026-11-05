@@ -25,7 +25,12 @@ final class ScreenshotWatcher {
     private let onNew: (URL) -> Void
     private let onChange: () -> Void
 
-    private static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "tif", "tiff", "gif", "webp"]
+    static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "tif", "tiff", "gif", "webp"]
+
+    /// True when the URL looks like an image the line can show.
+    static func isImageURL(_ url: URL) -> Bool {
+        imageExtensions.contains(url.pathExtension.lowercased())
+    }
 
     static let desktop = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
 

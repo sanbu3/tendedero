@@ -41,6 +41,11 @@
 "When something new hangs" = "Yeni bir şey asıldığında";
 "Over full screen apps" = "Tam ekran uygulamaların üzerinde";
 "Hang copied images" = "Kopyalanan görselleri as";
+
+"Sync iPhone screenshots" = "iPhone ekran görüntülerini eşitle";
+"Screenshots from the iPhone shortcut in iCloud Drive/Tendedero hang on the line" = "iPhone kısayolunun iCloud Drive/Tendedero içine kaydettiği ekran görüntüleri kendiliğinden asılır";
+"iCloud Drive is not available" = "iCloud Drive kullanılamıyor";
+"Sign in to iCloud Drive and try again." = "iCloud Drive'da oturum açın ve yeniden deneyin.";
 "Images you copy hang on the line too" = "Kopyaladığınız görseller de ipe asılır";
 "Tendedero, hanging copied images" = "Tendedero, kopyalanan görselleri asıyor";
 "The line is empty" = "İp boş";

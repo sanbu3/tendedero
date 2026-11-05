@@ -41,6 +41,11 @@
 "When something new hangs" = "新しいものが吊るされたとき";
 "Over full screen apps" = "フルスクリーンのアプリの上にも";
 "Hang copied images" = "コピーした画像を吊るす";
+
+"Sync iPhone screenshots" = "iPhoneのスクリーンショットを同期";
+"Screenshots from the iPhone shortcut in iCloud Drive/Tendedero hang on the line" = "iCloud Drive/Tendedero に保存された iPhone のスクリーンショットが自動で吊るされます";
+"iCloud Drive is not available" = "iCloud Drive を利用できません";
+"Sign in to iCloud Drive and try again." = "iCloud Drive にサインインしてから、もう一度お試しください。";
 "Images you copy hang on the line too" = "コピーした画像もロープに吊るされます";
 "Tendedero, hanging copied images" = "Tendedero、コピーした画像を吊るしています";
 "The line is empty" = "ロープは空です";

@@ -43,6 +43,11 @@
 "When something new hangs" = "When something new hangs";
 "Over full screen apps" = "Over full screen apps";
 "Hang copied images" = "Hang copied images";
+
+"Sync iPhone screenshots" = "Sync iPhone screenshots";
+"Screenshots from the iPhone shortcut in iCloud Drive/Tendedero hang on the line" = "Screenshots from the iPhone shortcut in iCloud Drive/Tendedero hang on the line";
+"iCloud Drive is not available" = "iCloud Drive is not available";
+"Sign in to iCloud Drive and try again." = "Sign in to iCloud Drive and try again.";
 "Images you copy hang on the line too" = "Images you copy hang on the line too";
 "Tendedero, hanging copied images" = "Tendedero, hanging copied images";
 "The line is empty" = "The line is empty";

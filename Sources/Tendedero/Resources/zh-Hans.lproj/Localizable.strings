@@ -41,6 +41,11 @@
 "When something new hangs" = "有新内容挂上时";
 "Over full screen apps" = "在全屏 App 上";
 "Hang copied images" = "挂上复制的图片";
+
+"Sync iPhone screenshots" = "同步 iPhone 截图";
+"Screenshots from the iPhone shortcut in iCloud Drive/Tendedero hang on the line" = "iPhone 快捷指令存入 iCloud Drive/Tendedero 的截图会自动挂上晾衣绳";
+"iCloud Drive is not available" = "iCloud Drive 不可用";
+"Sign in to iCloud Drive and try again." = "请先登录 iCloud Drive，再试一次。";
 "Images you copy hang on the line too" = "复制的图片也会挂上绳";
 "Tendedero, hanging copied images" = "Tendedero，正在挂上复制的图片";
 "The line is empty" = "晾衣绳上是空的";

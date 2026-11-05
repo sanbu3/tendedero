@@ -41,6 +41,11 @@
 "When something new hangs" = "새 항목이 걸릴 때";
 "Over full screen apps" = "전체 화면 앱 위에서도";
 "Hang copied images" = "복사한 이미지 걸기";
+
+"Sync iPhone screenshots" = "iPhone 스크린샷 동기화";
+"Screenshots from the iPhone shortcut in iCloud Drive/Tendedero hang on the line" = "iCloud Drive/Tendedero에 저장된 iPhone 스크린샷이 자동으로 걸립니다";
+"iCloud Drive is not available" = "iCloud Drive를 사용할 수 없습니다";
+"Sign in to iCloud Drive and try again." = "iCloud Drive에 로그인한 후 다시 시도하세요.";
 "Images you copy hang on the line too" = "복사한 이미지도 빨랫줄에 걸려요";
 "Tendedero, hanging copied images" = "Tendedero, 복사한 이미지 거는 중";
 "The line is empty" = "빨랫줄이 비어 있어요";
