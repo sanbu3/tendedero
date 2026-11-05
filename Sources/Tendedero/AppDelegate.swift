@@ -1080,187 +1080,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(ClosureMenuItem(L("Hang everything back")) { Held.hangEverythingBack() })
         }
 
-        let inbox = ClosureMenuItem(L("Handle screenshots")) { [weak self] in
-            self?.setInbox(!Inbox.isEnabled)
-        }
-        inbox.state = Inbox.isEnabled ? .on : .off
-        inbox.toolTip = L("Screenshots hang instantly and skip the Desktop")
-        menu.addItem(inbox)
-
-        let clipboard = ClosureMenuItem(L("Hang copied images")) { [weak self] in
-            self?.setClipboard(!ClipboardWatcher.isEnabled)
-        }
-        clipboard.state = ClipboardWatcher.isEnabled ? .on : .off
-        clipboard.toolTip = L("Images you copy hang on the line too")
-        menu.addItem(clipboard)
-
-        let phone = ClosureMenuItem(L("Sync iPhone screenshots")) { [weak self] in
-            guard let self else { return }
-            PhoneSync.isEnabled.toggle()
-            self.setPhoneWatching(PhoneSync.isEnabled)
-        }
-        phone.state = PhoneSync.isEnabled ? .on : .off
-        phone.toolTip = L("Screenshots from the iPhone shortcut in iCloud Drive/Tendedero hang on the line")
-        menu.addItem(phone)
-
-        let bringDown = NSMenuItem(title: L("Bring the line down"), action: nil, keyEquivalent: "")
-        let options = NSMenu()
-        let hover = ClosureMenuItem(L("When the pointer rests at the top center")) {
-            AppDelegate.opensFromTopCenter.toggle()
-        }
-        hover.state = Self.opensFromTopCenter ? .on : .off
-        options.addItem(hover)
-        let peek = ClosureMenuItem(L("When something new hangs")) {
-            AppDelegate.peeksAtNew.toggle()
-        }
-        peek.state = Self.peeksAtNew ? .on : .off
-        options.addItem(peek)
-        let fullScreen = ClosureMenuItem(L("Over full screen apps")) { [weak self] in
-            FullScreen.showLineOver.toggle()
-            self?.refresh()
-        }
-        fullScreen.state = FullScreen.showLineOver ? .on : .off
-        options.addItem(fullScreen)
-        bringDown.submenu = options
-        menu.addItem(bringDown)
-
-        let mouseItem = NSMenuItem(title: L("Mouse"), action: nil, keyEquivalent: "")
-        let mouseMenu = NSMenu()
-        mouseMenu.autoenablesItems = false
-        let click = ClosureMenuItem(L("Click copies")) { [weak self] in
-            self?.line.clickCopies.toggle()
-        }
-        click.state = line.clickCopies ? .on : .off
-        mouseMenu.addItem(click)
-        let clickNote = NSMenuItem(title: L("When off, a click previews"), action: nil, keyEquivalent: "")
-        clickNote.isEnabled = false
-        mouseMenu.addItem(clickNote)
-        let middle = NSMenuItem(title: L("Middle click deletes the photo under the pointer"), action: nil, keyEquivalent: "")
-        middle.isEnabled = false
-        mouseMenu.addItem(middle)
-        let double = NSMenuItem(title: L("Double-click copies. Right-click keeps the menu."), action: nil, keyEquivalent: "")
-        double.isEnabled = false
-        mouseMenu.addItem(double)
-        let deleteItem = NSMenuItem(title: L("Delete hovered photo"), action: nil, keyEquivalent: "")
-        let deleteMenu = NSMenu()
-        let currentDelete = NSMenuItem(title: Shortcut.deleteHovered?.display ?? L("None"), action: nil, keyEquivalent: "")
-        currentDelete.isEnabled = false
-        deleteMenu.addItem(currentDelete)
-        deleteMenu.addItem(ClosureMenuItem(L("Change Delete Shortcut…")) { [weak self] in
-            self?.changeShortcut(for: .deleteHovered)
-        })
-        deleteItem.submenu = deleteMenu
-        mouseMenu.addItem(deleteItem)
-        mouseItem.submenu = mouseMenu
-        menu.addItem(mouseItem)
-
-        let folderItem = NSMenuItem(title: L("Also watch folders"), action: nil, keyEquivalent: "")
-        let folderMenu = NSMenu()
-        folderMenu.autoenablesItems = false
-        let folders = Self.extraFolders
-        for folder in folders {
-            let item = ClosureMenuItem(FileManager.default.displayName(atPath: folder.path)) {
-                NSWorkspace.shared.open(folder)
-            }
-            item.state = .on
-            folderMenu.addItem(item)
-        }
-        if !folders.isEmpty { folderMenu.addItem(.separator()) }
-        let add = ClosureMenuItem(L("Add Folder…")) { [weak self] in self?.chooseExtraFolder() }
-        add.isEnabled = folders.count < Self.maxExtraFolders
-        folderMenu.addItem(add)
-        if !folders.isEmpty {
-            let stop = NSMenuItem(title: L("Stop Watching"), action: nil, keyEquivalent: "")
-            let stopMenu = NSMenu()
-            for folder in folders {
-                stopMenu.addItem(ClosureMenuItem(FileManager.default.displayName(atPath: folder.path)) { [weak self] in
-                    AppDelegate.extraFolders.removeAll { $0.standardizedFileURL == folder.standardizedFileURL }
-                    self?.startWatcher()
-                })
-            }
-            stop.submenu = stopMenu
-            folderMenu.addItem(stop)
-        }
-        folderItem.submenu = folderMenu
-        menu.addItem(folderItem)
-
-        let keepItem = NSMenuItem(title: L("Keep on line"), action: nil, keyEquivalent: "")
-        let keeps = NSMenu()
-        let fit = ClosureMenuItem(L("As many as fit")) { [weak self] in self?.setKeep(nil) }
-        fit.state = Line.keepOnLine == nil ? .on : .off
-        keeps.addItem(fit)
-        for n in Line.keepChoices {
-            let item = ClosureMenuItem(String(format: L("%d photos"), n)) { [weak self] in self?.setKeep(n) }
-            item.state = Line.keepOnLine == n ? .on : .off
-            keeps.addItem(item)
-        }
-        keepItem.submenu = keeps
-        menu.addItem(keepItem)
-
-        let holdItem = NSMenuItem(title: L("Hold to make it a file"), action: nil, keyEquivalent: "")
-        let holds = NSMenu()
-        for seconds in Held.holdChoices {
-            let title = String(format: L("%.1f s"), seconds)
-            let item = ClosureMenuItem(title) { Held.holdDelay = seconds }
-            item.state = abs(Held.holdDelay - seconds) < 0.01 ? .on : .off
-            holds.addItem(item)
-        }
-        holdItem.submenu = holds
-        menu.addItem(holdItem)
-
-        let sizeItem = NSMenuItem(title: L("Size"), action: nil, keyEquivalent: "")
-        let sizes = NSMenu()
-        for (size, title) in [(Layout.Size.small, L("Small")), (.medium, L("Medium")), (.large, L("Large"))] {
-            let item = ClosureMenuItem(title) { [weak self] in self?.setSize(size) }
-            item.state = Layout.size == size ? .on : .off
-            sizes.addItem(item)
-        }
-        sizeItem.submenu = sizes
-        menu.addItem(sizeItem)
-
-        let shortcutItem = NSMenuItem(title: L("Shortcut"), action: nil, keyEquivalent: "")
-        let shortcuts = NSMenu()
-        let current = NSMenuItem(title: Shortcut.current?.display ?? L("None"), action: nil, keyEquivalent: "")
-        current.isEnabled = false
-        shortcuts.addItem(current)
-        shortcuts.addItem(ClosureMenuItem(L("Change Shortcut…")) { [weak self] in
-            self?.changeShortcut(for: .showLine)
-        })
-        shortcutItem.submenu = shortcuts
-        menu.addItem(shortcutItem)
-
-        menu.addItem(ClosureMenuItem(L("Open screenshots folder")) { [weak self] in
-            guard let self else { return }
-            NSWorkspace.shared.open(self.watcher.folder)
-        })
-
         menu.addItem(.separator())
-
-        let sound = ClosureMenuItem(L("Sounds")) { [weak self] in
+        menu.addItem(ClosureMenuItem(L("Settings…"), key: ",") { [weak self] in
             guard let self else { return }
-            self.line.soundOn.toggle()
-        }
-        sound.state = line.soundOn ? .on : .off
-        menu.addItem(sound)
-
-        let login = ClosureMenuItem(L("Open at login")) {
-            AppDelegate.toggleLaunchAtLogin()
-        }
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        menu.addItem(login)
-
-        // The app never connects to anything, so it cannot tell when a new
-        // version is out. The website can: it is opened with this version
-        // and language, and says whether there is a newer one.
-        menu.addItem(ClosureMenuItem(L("Check for Updates…")) {
-            NSWorkspace.shared.open(AppDelegate.updatesURL)
+            SettingsWindow.shared.show(for: self)
         })
-
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem(L("Quit Tendedero"), key: "q") {
             NSApp.terminate(nil)
         })
     }
+
+    // MARK: Settings
+
+    /// What the settings window can change, kept here so the window does not
+    /// reach into the app's own state.
+    var settingsLine: Line { line }
+
+    func settingsSetInbox(_ on: Bool) { setInbox(on) }
+
+    func settingsSetClipboard(_ on: Bool) { setClipboard(on) }
+
+    func settingsSetPhone(_ on: Bool) {
+        PhoneSync.isEnabled = on
+        setPhoneWatching(on)
+    }
+
+    func settingsAddFolder() { chooseExtraFolder() }
+
+    func settingsRemoveFolder(_ url: URL) {
+        Self.extraFolders.removeAll { $0.standardizedFileURL == url.standardizedFileURL }
+        startWatcher()
+    }
+
+    func settingsSetKeep(_ n: Int?) { setKeep(n) }
+
+    func settingsSetSize(_ size: Layout.Size) { setSize(size) }
+
+    func settingsChangeShortcut(_ slot: ShortcutSlot) { changeShortcut(for: slot) }
+
+    func settingsRefresh() { refresh() }
+
+    func settingsOpenScreenshotsFolder() {
+        NSWorkspace.shared.open(watcher.folder)
+    }
+
+    static var settingsExtraFolders: [URL] { extraFolders }
+
+    static var settingsMaxExtraFolders: Int { maxExtraFolders }
+
+    static func settingsLaunchAtLogin() -> Bool { SMAppService.mainApp.status == .enabled }
+
+    static func settingsToggleLaunchAtLogin() { toggleLaunchAtLogin() }
+
+    static var settingsUpdatesURL: URL { updatesURL }
 
     /// tendedero.app with the running version, and the menus' language when
     /// the website has it too, so the page answers in the same words.
