@@ -27,7 +27,7 @@
 ## Fóra da vista. Sempre a man.
 
 Cada captura que fas queda pendurada nunha corda xusto enriba da pantalla.
-Leva o punteiro á barra de menús e a corda baixa. Apártao e desaparece.
+Leva o punteiro ao centro da barra de menús e a corda baixa. Apártao e desaparece.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../images/gl/demo-dark.gif">
@@ -56,7 +56,14 @@ Leva o punteiro á barra de menús e a corda baixa. Apártao e desaparece.
 | Arrastrar a unha app | Envía unha copia, e a captura segue pendurada. |
 | Arrastrar a un cartafol | Queda alí e sae da corda. |
 | Arrastrar á Papeleira ou facer clic na cruz | Desfaste dela. |
-| Deixar o punteiro na barra de menús | Baixa a corda nesa pantalla. |
+| <kbd>⌘</kbd>&thinsp;<kbd>Z</kbd> co punteiro na corda | Volve colgar o que acabas de soltar. |
+| <kbd>Espazo</kbd> co punteiro nunha foto | Bótalle unha ollada. |
+| <kbd>⌫</kbd> co punteiro nunha foto | Sóltaa, como o seu botón da esquina. |
+| Clic dereito e Compartir | Envíaa por AirDrop, Mensaxes, Mail e máis, e a captura segue pendurada. |
+| Clic dereito e Fixar | Gárdaa: pendura á esquerda do nó cunha pinza gris espacial e ningunha captura nova a empurra. |
+| Clic dereito e Suxeitar | Quítaa da corda e tena diante mentres traballas. |
+| No Finder, clic dereito nunha imaxe e Pendurar en Tendedero | Pendura calquera imaxe na corda, fixada. |
+| Deixar o punteiro no centro da barra de menús | Baixa a corda nesa pantalla. |
 | Facer clic en calquera sitio da barra de menús | Recolle a corda. |
 | <kbd>⌃</kbd>&thinsp;<kbd>⌥</kbd>&thinsp;<kbd>T</kbd> | Amosa ou oculta a corda. Cámbiase en Atallo, na barra de menús. |
 
@@ -97,7 +104,7 @@ Tendedero funciona só no teu Mac, e as túas capturas nunca saen del.
 | | |
 |:--|:--|
 | **Compatibilidade** | macOS 14 Sonoma ou posterior, en Mac con Apple silicon ou Intel. Pensado para macOS 27. |
-| **Tamaño** | 1,7 MB |
+| **Tamaño** | 3,5 MB |
 | **Idiomas** | Inglés, español, galego, francés, portugués do Brasil, xaponés, coreano, chinés simplificado, turco, acerbaixano e hindi |
 | **Feito con** | Swift, AppKit e SwiftUI |
 | **Conexión a internet** | Non a usa |

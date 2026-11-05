@@ -8,6 +8,7 @@
 "Hide line" = "隐藏晾衣绳";
 "Show line" = "显示晾衣绳";
 "Take everything down" = "全部取下";
+"Put back" = "挂回去";
 "Handle screenshots" = "接管截图";
 "Screenshots hang instantly and skip the Desktop" = "截图即刻挂上，不再经过桌面";
 "Open screenshots folder" = "打开截图文件夹";
@@ -57,6 +58,7 @@
 "Quick Look" = "快速查看";
 "Markup" = "标记";
 "Show in Finder" = "在访达中显示";
+"Share…" = "共享…";
 "Save to Desktop" = "存储到桌面";
 "Discard" = "丢弃";
 "Take down" = "取下";
@@ -79,3 +81,10 @@
 "Change Delete Shortcut…" = "更改删除快捷键…";
 "Change Delete Shortcut" = "更改删除快捷键";
 "When off, a click previews" = "关闭时单击预览";
+/* Pinning and holding photos */
+"Pin" = "固定";
+"Unpin" = "取消固定";
+"Hold" = "拿在手上";
+"Hang back" = "放回绳上";
+"Hang everything back" = "全部放回绳上";
+"Actual Size" = "实际大小";

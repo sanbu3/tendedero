@@ -8,6 +8,7 @@
 "Hide line" = "Ocultar varal";
 "Show line" = "Mostrar varal";
 "Take everything down" = "Recolher tudo";
+"Put back" = "Pendurar de volta";
 "Handle screenshots" = "Cuidar das capturas de tela";
 "Screenshots hang instantly and skip the Desktop" = "As capturas vão direto para o varal, sem passar pela Mesa";
 "Open screenshots folder" = "Abrir pasta de capturas";
@@ -57,6 +58,7 @@
 "Quick Look" = "Visualização Rápida";
 "Markup" = "Marcação";
 "Show in Finder" = "Mostrar no Finder";
+"Share…" = "Compartilhar…";
 "Save to Desktop" = "Salvar na Mesa";
 "Discard" = "Descartar";
 "Take down" = "Recolher";
@@ -79,3 +81,10 @@
 "Change Delete Shortcut…" = "Alterar o atalho de exclusão…";
 "Change Delete Shortcut" = "Alterar o atalho de exclusão";
 "When off, a click previews" = "Quando desativado, um clique mostra uma prévia";
+/* Pinning and holding photos */
+"Pin" = "Fixar";
+"Unpin" = "Desafixar";
+"Hold" = "Segurar";
+"Hang back" = "Devolver ao varal";
+"Hang everything back" = "Devolver tudo ao varal";
+"Actual Size" = "Tamanho real";

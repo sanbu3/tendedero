@@ -9,8 +9,8 @@ CONFIG="${1:-release}"
 # pass different values, so both can be installed and opened at once.
 APP_NAME="${APP_NAME:-Tendedero}"
 BUNDLE_ID="${BUNDLE_ID:-app.tendedero.Tendedero}"
-VERSION="${VERSION:-1.6.0}"
-BUNDLE_VERSION="${BUNDLE_VERSION:-7}"
+VERSION="${VERSION:-1.8.1}"
+BUNDLE_VERSION="${BUNDLE_VERSION:-11}"
 APP="${APP_PATH:-build/$APP_NAME.app}"
 
 # Builds one architecture and prints the binary's path.
@@ -91,6 +91,16 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <string>${APP_NAME} watches the folder you chose so it can hang new images on the line.</string>
   <key>NSDownloadsFolderUsageDescription</key>
   <string>${APP_NAME} watches the folder you chose so it can hang new images on the line.</string>
+  <key>NSServices</key>
+  <array>
+    <dict>
+      <key>NSMenuItem</key><dict><key>default</key><string>Hang on Tendedero</string></dict>
+      <key>NSMessage</key><string>hangOnLine</string>
+      <key>NSPortName</key><string>${APP_NAME}</string>
+      <key>NSRequiredContext</key><dict/>
+      <key>NSSendFileTypes</key><array><string>public.image</string></array>
+    </dict>
+  </array>
 </dict>
 </plist>
 PLIST

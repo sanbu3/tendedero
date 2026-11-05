@@ -8,6 +8,7 @@
 "Hide line" = "İpi gizle";
 "Show line" = "İpi göster";
 "Take everything down" = "Hepsini indir";
+"Put back" = "Geri as";
 "Handle screenshots" = "Ekran görüntülerini yönet";
 "Screenshots hang instantly and skip the Desktop" = "Ekran görüntüleri anında asılır ve Masaüstünü atlar";
 "Open screenshots folder" = "Ekran görüntüleri klasörünü aç";
@@ -57,6 +58,7 @@
 "Quick Look" = "Hızlı Bakış";
 "Markup" = "İşaretle";
 "Show in Finder" = "Finder'da göster";
+"Share…" = "Paylaş…";
 "Save to Desktop" = "Masaüstüne kaydet";
 "Discard" = "Sil";
 "Take down" = "İndir";
@@ -79,3 +81,10 @@
 "Change Delete Shortcut…" = "Silme kısayolunu değiştir…";
 "Change Delete Shortcut" = "Silme kısayolunu değiştir";
 "When off, a click previews" = "Kapalıyken tıklama önizleme açar";
+/* Pinning and holding photos */
+"Pin" = "Sabitle";
+"Unpin" = "Sabitlemeyi kaldır";
+"Hold" = "Elinde tut";
+"Hang back" = "İpe geri koy";
+"Hang everything back" = "Hepsini ipe geri koy";
+"Actual Size" = "Gerçek boyut";

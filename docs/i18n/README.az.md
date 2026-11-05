@@ -27,7 +27,7 @@
 ## Gözdən uzaq. Əl altında.
 
 Çəkdiyiniz hər ekran şəkli ekranın düz üstündəki ipdən asılır.
-Göstəricini menyu panelində saxlayın, ip aşağı enir. Uzaqlaşdırın, yox olur.
+Göstəricini menyu panelinin ortasında saxlayın, ip aşağı enir. Uzaqlaşdırın, yox olur.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../images/az/demo-dark.gif">
@@ -56,7 +56,14 @@ Göstəricini menyu panelində saxlayın, ip aşağı enir. Uzaqlaşdırın, yox
 | Proqrama sürükləmək | Surətini göndərir. Şəkil ipdə qalır. |
 | Qovluğa sürükləmək | Orada saxlanır və ipdən çıxır. |
 | Zibil qutusuna sürükləmək və ya çarpaza klik | Ondan qurtulursunuz. |
-| Göstəricini menyu panelində saxlamaq | İpi həmin ekranda endirir. |
+| Göstərici ipin üstündəykən <kbd>⌘</kbd>&thinsp;<kbd>Z</kbd> | Atdığınızı ipə geri asır. |
+| Göstərici şəklin üstündəykən <kbd>Boşluq</kbd> | Tez baxın. |
+| Göstərici şəklin üstündəykən <kbd>⌫</kbd> | Küncdəki düyməsi kimi buraxın. |
+| Sağ klik, Paylaş | AirDrop, Mesajlar, Mail və digərləri ilə göndərir. Şəkil ipdə qalır. |
+| Sağ klik, Bərkit | Saxlayın: düyünün solunda kosmik boz sancaqla asılır və yeni ekran şəkilləri onu itələmir. |
+| Sağ klik, Əldə saxla | İpdən götürün və işləyərkən qarşınızda saxlayın. |
+| Finder-də şəklə sağ klik, Tendedero-ya as | İstənilən şəkli ipə bərkidilmiş halda asın. |
+| Göstəricini menyu panelinin ortasında saxlamaq | İpi həmin ekranda endirir. |
 | Menyu panelində istənilən yerə klik | İpi yığır. |
 | <kbd>⌃</kbd>&thinsp;<kbd>⌥</kbd>&thinsp;<kbd>T</kbd> | İpi göstərir və ya gizlədir. Menyu panelində Qısayol bölməsindən dəyişdirmək olar. |
 
@@ -98,7 +105,7 @@ Tendedero tamamilə Mac-inizdə işləyir və ekran şəkilləriniz oradan heç 
 | | |
 |:--|:--|
 | **Uyğunluq** | macOS 14 Sonoma və ya sonrakı, Apple silicon və Intel Mac-lərdə. macOS 27 üçün hazırlanıb. |
-| **Həcm** | 1,7 MB |
+| **Həcm** | 3,5 MB |
 | **Dillər** | İngilis, ispan, qalisiya, fransız, portuqal (Braziliya), yapon, koreya, sadələşdirilmiş Çin, türk, Azərbaycan və hind dili |
 | **Nə ilə yazılıb** | Swift, AppKit və SwiftUI |
 | **İnternet bağlantısı** | İstifadə etmir |

@@ -27,7 +27,7 @@
 ## Out of sight. Within reach.
 
 Every screenshot you take hangs on a line just above your screen.
-Rest the pointer in the menu bar and it glides down. Move away and it's gone.
+Rest the pointer in the middle of the menu bar and it glides down. Move away and it's gone.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/demo-dark.gif">
@@ -56,7 +56,14 @@ Rest the pointer in the menu bar and it glides down. Move away and it's gone.
 | Drag into an app | Send a copy. It stays on the line. |
 | Drag into a folder | Keep it there. It leaves the line. |
 | Drag to the Trash, or click the cross | Let it go. |
-| Rest the pointer in the menu bar | Bring the line down on that screen. |
+| <kbd>⌘</kbd>&thinsp;<kbd>Z</kbd> with the pointer on the line | Hang back what you just let go. |
+| <kbd>Space</kbd> with the pointer on a photo | Take a quick look. |
+| <kbd>⌫</kbd> with the pointer on a photo | Let it go, as its corner button does. |
+| Right click, then Share | Send it with AirDrop, Messages, Mail and more. It stays on the line. |
+| Right click, then Pin | Keep it: it hangs left of the knot on a space grey clip, and no new screenshot pushes it off. |
+| Right click, then Hold | Take it off the line and keep it in front of you while you work. |
+| In Finder, right click an image, then Hang on Tendedero | Hang any image on the line, pinned. |
+| Rest the pointer in the middle of the menu bar | Bring the line down on that screen. |
 | Click anything in the menu bar | Put it away. |
 | <kbd>⌃</kbd>&thinsp;<kbd>⌥</kbd>&thinsp;<kbd>T</kbd> | Show or hide the line. Change it under Shortcut in the menu bar. |
 
@@ -97,7 +104,7 @@ Tendedero runs entirely on your Mac, and your screenshots never leave it.
 | | |
 |:--|:--|
 | **Compatibility** | macOS 14 Sonoma or later, on Apple silicon and Intel. Designed for macOS 27. |
-| **Size** | 1.7 MB |
+| **Size** | 3.5 MB |
 | **Languages** | English, Spanish, Galician, French, Portuguese (Brazil), Japanese, Korean, Chinese (Simplified), Turkish, Azerbaijani, Hindi |
 | **Built with** | Swift, AppKit and SwiftUI |
 | **Network access** | None |
@@ -132,6 +139,8 @@ open build/Tendedero.app
 Requires the Swift toolchain. Xcode is optional. With the Command Line Tools for macOS 27, the script falls back to the macOS 26 SDK they install alongside, because the new SDK needs a SwiftUI macro plugin only Xcode includes. Local builds are signed ad hoc,
 so macOS asks again for access to the Desktop after each rebuild.
 
+Want to help? Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
+
 <details>
 <summary>Inside the app</summary>
 <br>
@@ -150,6 +159,7 @@ so macOS asks again for access to the Desktop after each rebuild.
 | `Trim.swift` | Trims a screen recording and saves the result |
 | `FullScreen.swift` | Knows when to stay hidden |
 | `Line.swift` | What is hanging, and what you can do with it |
+| `Held.swift` | A photo held in front of you, off the line |
 
 Every image here, the icon included, is drawn in code by
 `scripts/make-icon.swift` and `scripts/make-readme-art.swift`.

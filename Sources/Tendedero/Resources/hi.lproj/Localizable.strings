@@ -10,6 +10,7 @@
 "Hide line" = "रस्सी छिपाएँ";
 "Show line" = "रस्सी दिखाएँ";
 "Take everything down" = "सब उतार दें";
+"Put back" = "वापस टाँगें";
 "Handle screenshots" = "स्क्रीनशॉट संभालें";
 "Screenshots hang instantly and skip the Desktop" = "स्क्रीनशॉट तुरंत टँगते हैं और डेस्कटॉप पर नहीं जाते";
 "Open screenshots folder" = "स्क्रीनशॉट फ़ोल्डर खोलें";
@@ -59,6 +60,7 @@
 "Quick Look" = "क्विक लुक";
 "Markup" = "मार्कअप";
 "Show in Finder" = "Finder में दिखाएँ";
+"Share…" = "शेयर करें…";
 "Save to Desktop" = "डेस्कटॉप पर सेव करें";
 "Discard" = "हटाएँ";
 "Take down" = "उतारें";
@@ -81,3 +83,10 @@
 "Change Delete Shortcut…" = "हटाने का शॉर्टकट बदलें…";
 "Change Delete Shortcut" = "हटाने का शॉर्टकट बदलें";
 "When off, a click previews" = "बंद होने पर क्लिक पूर्वावलोकन दिखाता है";
+/* Pinning and holding photos */
+"Pin" = "पिन करें";
+"Unpin" = "पिन हटाएँ";
+"Hold" = "हाथ में लें";
+"Hang back" = "रस्सी पर लौटाएँ";
+"Hang everything back" = "सब रस्सी पर लौटाएँ";
+"Actual Size" = "असली आकार";

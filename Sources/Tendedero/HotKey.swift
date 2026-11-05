@@ -5,16 +5,21 @@ import Carbon
 /// key monitor, it needs no Accessibility permission.
 ///
 /// One handler serves every hot key in the app, and the Carbon event carries
-/// which one fired, so showing the line and deleting the hovered photo can
-/// have separate shortcuts without stealing each other's callback.
+/// which one fired, so showing the line, deleting the hovered photo and
+/// putting a photo back can have separate shortcuts without stealing each
+/// other's callback.
 final class HotKey {
     private var ref: EventHotKeyRef?
     private static var actions: [UInt32: () -> Void] = [:]
     private static var handlerInstalled = false
     private let id: UInt32
+    /// Ids handed out to shortcuts that do not care which one they are.
+    private static var nextID: UInt32 = 1
 
     /// Nil when the combination cannot be registered, for example because
     /// another app already took it.
+    /// A shortcut under an id of its own, for one that is registered and
+    /// unregistered while the app runs.
     init?(_ shortcut: Shortcut, id: UInt32, action: @escaping () -> Void) {
         self.id = id
         HotKey.actions[id] = action
@@ -45,6 +50,14 @@ final class HotKey {
             HotKey.actions[id] = nil
             return nil
         }
+    }
+
+    /// A shortcut under the next free id, for one that lives as long as its
+    /// owner: Put back, while the pointer is on the line.
+    convenience init?(_ shortcut: Shortcut, action: @escaping () -> Void) {
+        self.init(shortcut, id: HotKey.nextID, action: action)
+        guard ref != nil else { return nil }
+        HotKey.nextID += 1
     }
 
     deinit {
@@ -92,7 +105,36 @@ struct Shortcut: Equatable {
     /// Delete the photo under the pointer while the line is down.
     static let deleteHoveredStandard = Shortcut(keyCode: kVK_Delete, modifiers: [.control, .option], key: "⌫")
 
-    /// The shortcut that shows and hides the line. Nil means none.
+    /// ⌘Z, for Put back while the pointer is on the line. A hot key is a key
+    /// on the keyboard, not a letter, so it is the key that types Z with
+    /// Command held in the layout in use: on AZERTY, where QWERTY has W.
+    static var putBack: Shortcut {
+        Shortcut(keyCode: keyCode(typing: "z") ?? kVK_ANSI_Z, modifiers: .command, key: "z")
+    }
+
+    /// The key that types this letter with Command held, in a keyboard
+    /// layout, by default the one in use.
+    static func keyCode(typing letter: String,
+                        in source: TISInputSource? = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue()) -> Int? {
+        guard let source, let data = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
+        let layout = Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue() as Data
+        return layout.withUnsafeBytes { bytes -> Int? in
+            guard let keys = bytes.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else { return nil }
+            let command = UInt32((cmdKey >> 8) & 0xFF)
+            for code in 0..<128 {
+                var dead: UInt32 = 0
+                var chars = [UniChar](repeating: 0, count: 4)
+                var length = 0
+                let status = UCKeyTranslate(keys, UInt16(code), UInt16(kUCKeyActionDown), command,
+                                            UInt32(LMGetKbdType()), OptionBits(kUCKeyTranslateNoDeadKeysBit),
+                                            &dead, chars.count, &length, &chars)
+                if status == noErr, String(utf16CodeUnits: chars, count: length).lowercased() == letter { return code }
+            }
+            return nil
+        }
+    }
+
+    /// The user's choice. Nil means no shortcut at all.
     static var current: Shortcut? {
         get { current(for: .showLine) }
         set { set(newValue, for: .showLine) }

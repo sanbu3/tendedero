@@ -27,7 +27,7 @@
 ## Fuera de la vista. Siempre a mano.
 
 Cada captura que haces queda colgada en una cuerda justo encima de la pantalla.
-Lleva el puntero a la barra de menús y la cuerda baja. Apártalo y desaparece.
+Lleva el puntero al centro de la barra de menús y la cuerda baja. Apártalo y desaparece.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../images/es/demo-dark.gif">
@@ -56,7 +56,14 @@ Lleva el puntero a la barra de menús y la cuerda baja. Apártalo y desaparece.
 | Arrastrar a una app | Envía una copia, y la captura sigue colgada. |
 | Arrastrar a una carpeta | Se queda ahí y sale de la cuerda. |
 | Arrastrar a la Papelera o hacer clic en la cruz | Te deshaces de ella. |
-| Dejar el puntero en la barra de menús | Baja la cuerda en esa pantalla. |
+| <kbd>⌘</kbd>&thinsp;<kbd>Z</kbd> con el puntero en la cuerda | Vuelve a colgar lo que acabas de soltar. |
+| <kbd>Espacio</kbd> con el puntero en una foto | Échale un vistazo. |
+| <kbd>⌫</kbd> con el puntero en una foto | Suéltala, como su botón de la esquina. |
+| Clic derecho y Compartir | Envíala por AirDrop, Mensajes, Mail y más, y la captura sigue colgada. |
+| Clic derecho y Fijar | Guárdala: cuelga a la izquierda del nudo con una pinza gris espacial y ninguna captura nueva la empuja. |
+| Clic derecho y Sostener | Quítala de la cuerda y tenla delante mientras trabajas. |
+| En el Finder, clic derecho en una imagen y Colgar en Tendedero | Cuelga cualquier imagen en la cuerda, fijada. |
+| Dejar el puntero en el centro de la barra de menús | Baja la cuerda en esa pantalla. |
 | Hacer clic en cualquier sitio de la barra de menús | Recoge la cuerda. |
 | <kbd>⌃</kbd>&thinsp;<kbd>⌥</kbd>&thinsp;<kbd>T</kbd> | Muestra u oculta la cuerda. Se cambia en Atajo, en la barra de menús. |
 
@@ -97,7 +104,7 @@ Tendedero funciona solo en tu Mac, y tus capturas nunca salen de él.
 | | |
 |:--|:--|
 | **Compatibilidad** | macOS 14 Sonoma o posterior, en Mac con Apple silicon o Intel. Pensado para macOS 27. |
-| **Tamaño** | 1,7 MB |
+| **Tamaño** | 3,5 MB |
 | **Idiomas** | Inglés, español, gallego, francés, portugués de Brasil, japonés, coreano, chino simplificado, turco, azerbaiyano e hindi |
 | **Hecho con** | Swift, AppKit y SwiftUI |
 | **Conexión a internet** | No la usa |

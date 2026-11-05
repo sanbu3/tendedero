@@ -8,6 +8,7 @@
 "Hide line" = "빨랫줄 가리기";
 "Show line" = "빨랫줄 보기";
 "Take everything down" = "모두 걷어내기";
+"Put back" = "다시 걸기";
 "Handle screenshots" = "스크린샷 관리";
 "Screenshots hang instantly and skip the Desktop" = "스크린샷이 바로 걸리고 데스크탑을 거치지 않아요";
 "Open screenshots folder" = "스크린샷 폴더 열기";
@@ -57,6 +58,7 @@
 "Quick Look" = "훑어보기";
 "Markup" = "마크업";
 "Show in Finder" = "Finder에서 보기";
+"Share…" = "공유…";
 "Save to Desktop" = "데스크탑에 저장";
 "Discard" = "버리기";
 "Take down" = "걷어내기";
@@ -79,3 +81,10 @@
 "Change Delete Shortcut…" = "삭제 단축키 변경…";
 "Change Delete Shortcut" = "삭제 단축키 변경";
 "When off, a click previews" = "끄면 클릭 시 미리보기";
+/* Pinning and holding photos */
+"Pin" = "고정하기";
+"Unpin" = "고정 해제";
+"Hold" = "손에 들기";
+"Hang back" = "줄에 돌려놓기";
+"Hang everything back" = "모두 줄에 돌려놓기";
+"Actual Size" = "실제 크기";

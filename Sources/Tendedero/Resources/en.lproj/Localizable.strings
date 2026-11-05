@@ -10,6 +10,7 @@
 "Hide line" = "Hide line";
 "Show line" = "Show line";
 "Take everything down" = "Take everything down";
+"Put back" = "Put back";
 "Handle screenshots" = "Handle screenshots";
 "Screenshots hang instantly and skip the Desktop" = "Screenshots hang instantly and skip the Desktop";
 "Open screenshots folder" = "Open screenshots folder";
@@ -59,6 +60,7 @@
 "Quick Look" = "Quick Look";
 "Markup" = "Markup";
 "Show in Finder" = "Show in Finder";
+"Share…" = "Share…";
 "Save to Desktop" = "Save to Desktop";
 "Discard" = "Discard";
 "Take down" = "Take down";
@@ -81,3 +83,10 @@
 "Change Delete Shortcut…" = "Change Delete Shortcut…";
 "Change Delete Shortcut" = "Change Delete Shortcut";
 "When off, a click previews" = "When off, a click previews";
+/* Pinning and holding photos */
+"Pin" = "Pin";
+"Unpin" = "Unpin";
+"Hold" = "Hold";
+"Hang back" = "Hang back";
+"Hang everything back" = "Hang everything back";
+"Actual Size" = "Actual Size";

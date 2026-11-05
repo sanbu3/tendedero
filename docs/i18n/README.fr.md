@@ -27,7 +27,7 @@
 ## Hors de vue. À portée de main.
 
 Chaque capture d’écran que vous prenez s’accroche à une corde juste au-dessus de l’écran.
-Posez le pointeur dans la barre des menus et la corde descend. Éloignez-le et elle disparaît.
+Posez le pointeur au milieu de la barre des menus et la corde descend. Éloignez-le et elle disparaît.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../images/fr/demo-dark.gif">
@@ -56,7 +56,14 @@ Posez le pointeur dans la barre des menus et la corde descend. Éloignez-le et e
 | Glisser dans une app | Envoie une copie. Elle reste sur la corde. |
 | Glisser dans un dossier | Elle y reste. Elle quitte la corde. |
 | Glisser dans la corbeille, ou cliquer sur la croix | Laissez-la filer. |
-| Poser le pointeur dans la barre des menus | Fait descendre la corde sur cet écran. |
+| <kbd>⌘</kbd>&thinsp;<kbd>Z</kbd>, le pointeur sur la corde | Raccroche ce que vous venez de laisser filer. |
+| <kbd>Espace</kbd>, le pointeur sur une photo | Jetez-y un coup d’œil. |
+| <kbd>⌫</kbd>, le pointeur sur une photo | Laissez-la filer, comme son bouton d’angle. |
+| Clic droit, puis Partager | L’envoie par AirDrop, Messages, Mail et plus. Elle reste sur la corde. |
+| Clic droit, puis Épingler | Gardez-la : elle pend à gauche du nœud avec une pince gris sidéral, et aucune nouvelle capture ne la pousse. |
+| Clic droit, puis Garder en main | Décrochez-la et gardez-la devant vous pendant que vous travaillez. |
+| Dans le Finder, clic droit sur une image, puis Accrocher dans Tendedero | Accrochez n’importe quelle image à la corde, épinglée. |
+| Poser le pointeur au milieu de la barre des menus | Fait descendre la corde sur cet écran. |
 | Cliquer n’importe où dans la barre des menus | La range. |
 | <kbd>⌃</kbd>&thinsp;<kbd>⌥</kbd>&thinsp;<kbd>T</kbd> | Affiche ou masque la corde. Modifiable dans Raccourci, dans la barre des menus. |
 
@@ -97,7 +104,7 @@ Tendedero fonctionne entièrement sur votre Mac, et vos captures ne le quittent 
 | | |
 |:--|:--|
 | **Compatibilité** | macOS 14 Sonoma ou version ultérieure, sur Mac Apple silicon et Intel. Conçu pour macOS 27. |
-| **Taille** | 1,7 Mo |
+| **Taille** | 3,5 Mo |
 | **Langues** | Anglais, espagnol, galicien, français, portugais du Brésil, japonais, coréen, chinois simplifié, turc, azerbaïdjanais et hindi |
 | **Conçu avec** | Swift, AppKit et SwiftUI |
 | **Accès au réseau** | Aucun |
