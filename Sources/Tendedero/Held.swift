@@ -18,8 +18,14 @@ final class Held: NSObject {
     let id: UUID
     private let panel: HeldPanel
     private let view: HeldView
+    /// The file itself: the small form hands it to other apps, and copies it.
+    private let url: URL
     /// What it shows, kept so the flight back to the line can start at once.
     private let image: NSImage
+    /// The small file form, after a long press.
+    private var thumb: FileThumbView?
+    /// The size it had before it went small, to come back to.
+    private var fullFrame: NSRect?
     /// Its size at 100%, in points.
     private let natural: NSSize
     /// The frame-by-frame slide off the line, while it runs.
@@ -63,12 +69,13 @@ final class Held: NSObject {
     private init(id: UUID, url: URL, image: NSImage, on screen: NSScreen, line: Line,
                  from: NSRect?, onHangBack: @escaping (UUID, CGRect, NSImage) -> Void) {
         self.id = id
+        self.url = url
         self.image = image
         self.onHangBack = onHangBack
         let scale = screen.backingScaleFactor
         natural = NSSize(width: image.size.width / scale + HeldView.border * 2,
                          height: image.size.height / scale + HeldView.border * 2)
-        view = HeldView(image: image)
+        view = HeldView(image: image, url: url)
         panel = HeldPanel(content: view)
         super.init()
         view.onHangBack = { [weak self] in self?.hangBack() }
@@ -77,6 +84,7 @@ final class Held: NSObject {
         view.onCopy = { line.copy(id) }
         view.onMarkup = { line.markup(id) }
         view.onQuickLook = { line.quickLook(id) }
+        view.onLongPress = { [weak self] in self?.shrinkToFile() }
         // Stretched from an edge or a corner, it keeps the photo's shape.
         panel.minSize = NSSize(width: 80, height: 80)
         let target = startFrame(on: screen)
@@ -169,6 +177,46 @@ final class Held: NSObject {
                               width: natural.width, height: natural.height), display: true)
     }
 
+    /// Held down, it turns into the file itself: a small thumbnail that can
+    /// be dragged into another app, copied, or shared. The photo is still
+    /// held; Hang back still sends it home.
+    private func shrinkToFile() {
+        guard thumb == nil else { return }
+        fullFrame = panel.frame
+        let small = FileThumbView(url: url)
+        small.onHangBack = { [weak self] in self?.hangBack() }
+        small.onRestore = { [weak self] in self?.growBack() }
+        thumb = small
+        let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+        let size = FileThumbView.size
+        let target = NSRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
+                            width: size.width, height: size.height)
+        panel.contentAspectRatio = .zero
+        panel.contentView = small
+        panel.makeFirstResponder(small)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(target, display: true)
+        }
+    }
+
+    /// Double clicked in its small form: the photo again.
+    private func growBack() {
+        guard let thumb else { return }
+        let target = fullFrame ?? panel.frame
+        self.thumb = nil
+        panel.contentAspectRatio = natural
+        panel.contentView = view
+        panel.makeFirstResponder(view)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(target, display: true)
+        }
+        _ = thumb
+    }
+
     /// Hands it to the flight: the window stays until the app says the photo
     /// is flying, so there is no blink between the two.
     private func hangBack() {
@@ -218,14 +266,17 @@ private final class HeldPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// The photo in a glass frame like the cards on the line. The text in it is
-/// lit up as soon as it opens: a drag across the text picks it out, and ⌘C
-/// copies what was picked. A drag anywhere else, or with Command held, moves
-/// it; a scroll up hands it back to the line; a double click does too.
+/// The photo in a glass frame like the cards on the line. Dragging moves it;
+/// the button at the top left reads the text in the picture, and while it is
+/// on, a drag across the text picks it out for ⌘C. Keys: C copies the photo
+/// and leaves it in hand, ⌘C copies what was picked, Escape puts the pick
+/// down and then hangs the photo back. A double click hangs it back, and
+/// holding the button down for a moment turns it into the file itself.
 private final class HeldView: NSVisualEffectView {
     static let border: CGFloat = 6
 
     var onHangBack: () -> Void = {}
+    var onLongPress: () -> Void = {}
     var onZoom: (CGFloat, NSPoint) -> Void = { _, _ in }
     var onActualSize: () -> Void = {}
     var onCopy: () -> Void = {}
@@ -233,24 +284,38 @@ private final class HeldView: NSVisualEffectView {
     var onQuickLook: () -> Void = {}
 
     private let image: NSImage
+    private let url: URL
     private let photo = CALayer()
     private let hangBackButton = CornerButton(symbol: "arrow.up.to.line")
+    private let textButton = CornerButton(symbol: "text.viewfinder")
     /// The text read from the picture, and the two lights over it: everything
-    /// that can be picked, and what is picked.
+    /// that can be picked, and what is picked. Off until the button is used.
     private var text: PhotoText?
+    private var readingText = false
+    private var textOn = false
     private let standing = CAShapeLayer()
     private let pickLayer = CAShapeLayer()
     private var pickingFrom: NSPoint?
-    /// Where the drag currently is, while one is picking text.
     private var pickingTo: NSPoint?
     /// What the pick holds, ready for ⌘C, and the boxes to draw over it.
     private var picked = ""
     private var pickedBoxes: [CGRect] = []
+    /// Holding the button down turns the photo into its file.
+    private let holdRing = CAShapeLayer()
+    private var holdTimer: Timer?
+    private var pressAt: NSPoint?
+    private var pressScreen: NSPoint?
+    private var pressOrigin: NSPoint?
+    private var moving = false
+    private var copyKeyDown = false
     private var hangBackPull: CGFloat = 0
     private var hangBackAt = Date.distantPast
 
-    init(image: NSImage) {
+    private static let longPress: TimeInterval = 2.5
+
+    init(image: NSImage, url: URL) {
         self.image = image
+        self.url = url
         super.init(frame: .zero)
         material = .popover
         blendingMode = .behindWindow
@@ -272,13 +337,23 @@ private final class HeldView: NSVisualEffectView {
             layer?.addSublayer(light)
         }
         pickLayer.fillColor = NSColor.systemBlue.withAlphaComponent(0.30).cgColor
+        // The ring that fills while the button is held down.
+        holdRing.isHidden = true
+        holdRing.fillColor = nil
+        holdRing.strokeColor = NSColor.controlAccentColor.cgColor
+        holdRing.lineWidth = 2.5
+        holdRing.lineCap = .round
+        layer?.addSublayer(holdRing)
+        textButton.isOn = false
+        textButton.onPress = { [weak self] in self?.toggleText() }
+        textButton.setAccessibilityLabel(L("Read the text"))
+        addSubview(textButton)
         hangBackButton.alphaValue = 0
         hangBackButton.onPress = { [weak self] in self?.onHangBack() }
         hangBackButton.setAccessibilityLabel(L("Hang back"))
         addSubview(hangBackButton)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
-        readText()
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -290,7 +365,8 @@ private final class HeldView: NSVisualEffectView {
         photo.frame = bounds.insetBy(dx: Self.border, dy: Self.border)
         photo.contentsScale = window?.backingScaleFactor ?? 2
         CATransaction.commit()
-        hangBackButton.frame = NSRect(x: 9, y: bounds.height - 29, width: 20, height: 20)
+        textButton.frame = NSRect(x: 9, y: bounds.height - 29, width: 20, height: 20)
+        hangBackButton.frame = NSRect(x: bounds.width - 29, y: bounds.height - 29, width: 20, height: 20)
         // The lights follow the picture as the window is stretched.
         drawStanding()
         drawPick()
@@ -320,16 +396,35 @@ private final class HeldView: NSVisualEffectView {
         return CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
     }
 
-    private func readText() {
-        PhotoText.read(image) { [weak self] text in
-            guard let self else { return }
-            self.text = text
-            self.drawStanding()
+    // MARK: Reading the text
+
+    /// Off by default: the picture is left alone until the button is used.
+    private func toggleText() {
+        textOn.toggle()
+        textButton.isOn = textOn
+        if textOn {
+            if text != nil {
+                drawStanding()
+            } else if !readingText {
+                readingText = true
+                textButton.isBusy = true
+                PhotoText.read(image) { [weak self] text in
+                    guard let self else { return }
+                    self.readingText = false
+                    self.textButton.isBusy = false
+                    self.text = text
+                    self.drawStanding()
+                }
+            }
+        } else {
+            clearPick()
+            standing.isHidden = true
+            NSCursor.arrow.set()
         }
     }
 
     private func drawStanding() {
-        guard let text else {
+        guard textOn, let text else {
             standing.isHidden = true
             return
         }
@@ -350,9 +445,8 @@ private final class HeldView: NSVisualEffectView {
 
     private func drawPick() {
         let area = shown
-        let boxes = pickedBoxes
         let path = CGMutablePath()
-        for box in boxes {
+        for box in pickedBoxes {
             path.addRect(CGRect(x: area.minX + box.minX * area.width,
                                 y: area.minY + box.minY * area.height,
                                 width: box.width * area.width,
@@ -361,7 +455,7 @@ private final class HeldView: NSVisualEffectView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         pickLayer.path = path
-        pickLayer.isHidden = boxes.isEmpty
+        pickLayer.isHidden = pickedBoxes.isEmpty
         CATransaction.commit()
     }
 
@@ -392,6 +486,8 @@ private final class HeldView: NSVisualEffectView {
         return true
     }
 
+    // MARK: Moving and holding
+
     override func updateTrackingAreas() {
         trackingAreas.forEach(removeTrackingArea)
         addTrackingArea(NSTrackingArea(rect: bounds,
@@ -408,7 +504,7 @@ private final class HeldView: NSVisualEffectView {
 
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if text?.hasText(at: unit(point)) == true, pickingFrom == nil {
+        if textOn, text?.hasText(at: unit(point)) == true, pickingFrom == nil {
             NSCursor.iBeam.set()
         } else if pickingFrom == nil {
             NSCursor.arrow.set()
@@ -428,39 +524,106 @@ private final class HeldView: NSVisualEffectView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        // A double click hands it back; with Option held, it is copied first.
+        // A double click hands it back; with C held down, or Option, the photo
+        // is copied first.
         if event.clickCount == 2 {
-            if event.modifierFlags.contains(.option) { onCopy() }
+            if copyKeyDown || event.modifierFlags.contains(.option) { onCopy() }
             onHangBack()
             return
         }
-        // Option on its own does nothing, so an Option double click stays put.
-        if event.modifierFlags.contains(.option) { return }
         window?.makeKey()
         window?.makeFirstResponder(self)
-        // Text under the pointer is picked; anywhere else, or with Command
-        // held, the photo is moved.
-        if !event.modifierFlags.contains(.command), text?.hasText(at: unit(point)) == true {
+        // While the text is lit, a drag across it picks it. Anywhere else the
+        // photo is moved, as ever.
+        if textOn, text?.hasText(at: unit(point)) == true {
             clearPick()
             pickingFrom = point
             pickingTo = point
             return
         }
-        clearPick()
-        window?.performDrag(with: event)
+        beginPress(at: point)
+    }
+
+    /// Press and hold without moving: after a moment the photo becomes its
+    /// file. A ring fills around the pointer so the wait shows.
+    private func beginPress(at point: NSPoint) {
+        pressAt = point
+        pressScreen = NSEvent.mouseLocation
+        pressOrigin = window?.frame.origin
+        moving = false
+        showRing(at: point)
+        let timer = Timer(timeInterval: Self.longPress, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.longPressFired() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        holdTimer = timer
+    }
+
+    private func longPressFired() {
+        holdTimer = nil
+        guard let pressAt, !moving else { return }
+        hideRing()
+        self.pressAt = nil
+        onLongPress()
+    }
+
+    private func showRing(at point: NSPoint) {
+        let radius: CGFloat = 13
+        let circle = CGPath(ellipseIn: NSRect(x: point.x - radius, y: point.y - radius,
+                                              width: radius * 2, height: radius * 2), transform: nil)
+        holdRing.removeAllAnimations()
+        holdRing.path = circle
+        holdRing.strokeEnd = 1
+        holdRing.isHidden = false
+        let fill = CABasicAnimation(keyPath: "strokeEnd")
+        fill.fromValue = 0
+        fill.toValue = 1
+        fill.duration = Self.longPress
+        holdRing.add(fill, forKey: "hold")
+        holdRing.strokeEnd = 1
+    }
+
+    private func hideRing() {
+        holdRing.removeAllAnimations()
+        holdRing.isHidden = true
+    }
+
+    private func endPress() {
+        holdTimer?.invalidate()
+        holdTimer = nil
+        pressAt = nil
+        hideRing()
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let start = pickingFrom else { return }
-        updatePick(from: start, to: convert(event.locationInWindow, from: nil))
+        if let start = pickingFrom {
+            updatePick(from: start, to: convert(event.locationInWindow, from: nil))
+            return
+        }
+        guard let origin = pressOrigin, let from = pressScreen else { return }
+        let now = NSEvent.mouseLocation
+        let moved = hypot(now.x - from.x, now.y - from.y)
+        guard moving || moved > 3 else { return }
+        if !moving {
+            moving = true
+            holdTimer?.invalidate()
+            holdTimer = nil
+            hideRing()
+        }
+        window?.setFrameOrigin(NSPoint(x: origin.x + now.x - from.x, y: origin.y + now.y - from.y))
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard let start = pickingFrom else { return }
-        updatePick(from: start, to: convert(event.locationInWindow, from: nil))
-        pickingFrom = nil
-        pickingTo = nil
-        NSCursor.arrow.set()
+        if let start = pickingFrom {
+            updatePick(from: start, to: convert(event.locationInWindow, from: nil))
+            pickingFrom = nil
+            pickingTo = nil
+            NSCursor.arrow.set()
+            return
+        }
+        endPress()
+        pressOrigin = nil
+        pressScreen = nil
     }
 
     override func magnify(with event: NSEvent) {
@@ -495,6 +658,7 @@ private final class HeldView: NSVisualEffectView {
     }
 
     override func keyDown(with event: NSEvent) {
+        guard !event.isARepeat else { return }
         if event.keyCode == 53 {
             // Escape first puts down what was picked, then the photo itself.
             if !picked.isEmpty {
@@ -502,11 +666,27 @@ private final class HeldView: NSVisualEffectView {
             } else {
                 onHangBack()
             }
-        } else if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "c" {
-            if !copyPick() { onCopy() }
-        } else {
-            super.keyDown(with: event)
+            return
         }
+        let plain = event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "c" {
+            if !copyPick() { onCopy() }
+            return
+        }
+        // C alone copies the photo and leaves it in hand, but only while the
+        // pointer rests on it: a key pressed for another app is not ours.
+        if plain, event.charactersIgnoringModifiers == "c",
+           window?.frame.contains(NSEvent.mouseLocation) == true {
+            copyKeyDown = true
+            onCopy()
+            flash(L("Copied"))
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    override func keyUp(with event: NSEvent) {
+        if event.charactersIgnoringModifiers == "c" { copyKeyDown = false }
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -526,14 +706,141 @@ private final class HeldView: NSVisualEffectView {
 
     /// A small word over the photo, for a moment: what just happened.
     private func flash(_ text: String) {
+        FlashWord.show(text, in: self)
+    }
+}
+
+/// The photo as the file it is: a small Finder thumbnail that can be dragged
+/// into another app, copied with ⌘C or C, or shared from its menu. A double
+/// click gives the photo back.
+private final class FileThumbView: NSVisualEffectView, NSDraggingSource {
+    static let size = NSSize(width: 132, height: 132)
+
+    let url: URL
+    var onHangBack: () -> Void = {}
+    var onRestore: () -> Void = {}
+
+    private let iconView = NSImageView()
+    private var pressAt: NSPoint?
+
+    init(url: URL) {
+        self.url = url
+        super.init(frame: .zero)
+        material = .popover
+        blendingMode = .behindWindow
+        state = .active
+        wantsLayer = true
+        layer?.cornerRadius = 16
+        layer?.masksToBounds = true
+        layer?.borderWidth = 0.5
+        layer?.borderColor = NSColor.white.withAlphaComponent(0.5).cgColor
+        iconView.image = NSWorkspace.shared.icon(forFile: url.path)
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        addSubview(iconView)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(url.lastPathComponent)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        iconView.frame = bounds.insetBy(dx: 16, dy: 16)
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            onRestore()
+            return
+        }
+        window?.makeKey()
+        window?.makeFirstResponder(self)
+        pressAt = convert(event.locationInWindow, from: nil)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = pressAt else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        guard hypot(point.x - start.x, point.y - start.y) > 3 else { return }
+        pressAt = nil
+        dragFile(with: event)
+    }
+
+    /// The file, to whatever app it is dropped on.
+    private func dragFile(with event: NSEvent) {
+        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+        item.setDraggingFrame(NSRect(origin: .zero, size: NSSize(width: 96, height: 96)),
+                              contents: iconView.image ?? NSImage())
+        let session = beginDraggingSession(with: [item], event: event, source: self)
+        session.animatesToStartingPositionsOnCancelOrFail = true
+    }
+
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        [.copy, .generic]
+    }
+
+    private func copyFile() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([url as NSURL])
+        FlashWord.show(L("Copied"), in: self)
+    }
+
+    private func share() {
+        NSSharingServicePicker(items: [url]).show(relativeTo: iconView.bounds, of: iconView, preferredEdge: .minY)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let device = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaY : event.scrollingDeltaY
+        guard device > 0, event.momentumPhase.isEmpty else { return }
+        onHangBack()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {
+            onHangBack()
+            return
+        }
+        let plain = event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "c" {
+            copyFile()
+            return
+        }
+        if plain, event.charactersIgnoringModifiers == "c",
+           window?.frame.contains(NSEvent.mouseLocation) == true {
+            copyFile()
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        let menu = NSMenu()
+        menu.addItem(ClosureMenuItem(L("Copy")) { [weak self] in self?.copyFile() })
+        menu.addItem(ClosureMenuItem(L("Share")) { [weak self] in self?.share() })
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem(L("Back to the photo")) { [weak self] in self?.onRestore() })
+        menu.addItem(ClosureMenuItem(L("Hang back")) { [weak self] in self?.onHangBack() })
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+}
+
+/// A small word over a view for a moment: what just happened.
+private enum FlashWord {
+    static func show(_ text: String, in view: NSView) {
         let label = NSTextField(labelWithString: text)
         label.font = .systemFont(ofSize: 12, weight: .semibold)
         label.textColor = .white
         label.alignment = .center
         label.sizeToFit()
         let pad: CGFloat = 9
-        let box = NSVisualEffectView(frame: NSRect(x: bounds.midX - (label.frame.width + pad * 2) / 2,
-                                                  y: bounds.midY - label.frame.height / 2 - pad,
+        let box = NSVisualEffectView(frame: NSRect(x: view.bounds.midX - (label.frame.width + pad * 2) / 2,
+                                                  y: view.bounds.midY - label.frame.height / 2 - pad,
                                                   width: label.frame.width + pad * 2,
                                                   height: label.frame.height + pad * 1.6))
         box.material = .hudWindow
@@ -544,7 +851,7 @@ private final class HeldView: NSVisualEffectView {
         label.frame.origin = NSPoint(x: pad, y: pad * 0.8)
         box.addSubview(label)
         box.alphaValue = 0
-        addSubview(box)
+        view.addSubview(box)
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.14
             box.animator().alphaValue = 1
@@ -562,6 +869,17 @@ private final class HeldView: NSVisualEffectView {
 /// A small glass disc with a symbol, as on the line's cards.
 private final class CornerButton: NSVisualEffectView {
     var onPress: () -> Void = {}
+    /// The button that is switched on, like the text reader, shows it.
+    var isOn = false { didSet { updateLook() } }
+    /// Working, with nothing to show yet.
+    var isBusy = false { didSet { updateLook() } }
+    private var symbolView: NSImageView?
+
+    private func updateLook() {
+        layer?.backgroundColor = isOn ? NSColor.controlAccentColor.withAlphaComponent(0.9).cgColor : nil
+        symbolView?.contentTintColor = isOn ? .white : .labelColor
+        symbolView?.alphaValue = isBusy ? 0.4 : 1
+    }
 
     init(symbol: String) {
         super.init(frame: .zero)
@@ -579,6 +897,7 @@ private final class CornerButton: NSVisualEffectView {
         icon.contentTintColor = .labelColor
         icon.frame = NSRect(x: 0, y: 0, width: 20, height: 20)
         icon.imageScaling = .scaleNone
+        symbolView = icon
         addSubview(icon)
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
