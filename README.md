@@ -1,4 +1,12 @@
-> **Fork note:** this checkout adds a top-center hover trigger, a hint bubble, middle-click delete and double-click copy. See [README-DEV.md](README-DEV.md).
+> **This fork.** Built on [alejandrobujan/tendedero](https://github.com/alejandrobujan/tendedero), synced to **v1.8.1**, and shipped as a separate **Tendedero Dev** (`app.tendedero.Tendedero.dev`) so the official app is left untouched. What it does differently:
+>
+> - **A pull-up trigger.** The pointer rises from the top centre and reaches the top edge; the line drops with a bundled soft thump instead of the menu-bar hover.
+> - **Screenshots are taken over by default.** They go into the app's own folder instead of the Desktop, and the folder is a **queue**: a capture past the capacity takes the oldest one down, and captures that landed while the app was closed are taken in at the next launch.
+> - **A photo in the hand.** Scroll down over a photo to pull it off the line; drag it, zoom it, read its text with the built-in OCR, `C` to copy it, `⌘W` to hang it back. Hold the button a moment and it becomes the file itself, carried under the pointer and droppable into any app.
+> - **iPhone screenshots over iCloud Drive**, and a small `tendedero` CLI that hangs files from the terminal.
+> - **A settings window**, so the menu bar keeps only the everyday actions.
+>
+> Full notes, in Chinese: [README-DEV.md](README-DEV.md).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">

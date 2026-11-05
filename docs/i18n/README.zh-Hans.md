@@ -1,3 +1,13 @@
+> **本仓库是二次开发版。** 基于 [alejandrobujan/tendedero](https://github.com/alejandrobujan/tendedero)（已同步到 v1.8.1），以独立的 **Tendedero Dev** 构建发布，不影响原生版。主要差异：
+>
+> - **触发**：指针从顶部正中间向上推到最上沿才落下，配一声内置闷响；
+> - **截图默认接管**：落在 App 自己的目录而不是桌面，目录是**队列**，满了最旧的自动出队；关闭期间落在桌面的截图下次启动收进队列；
+> - **拿在手上**：滚轮下拉把图片取下来，可拖动、缩放、用内置 OCR 取字、`C` 复制、`⌘W` 放回；按住不放会缩成文件图标，可拖到任意 App 放下；
+> - **iPhone 截图**：走 iCloud Drive 自动上绳；附带 `tendedero` 命令行；
+> - **设置窗口**：托盘只保留日常操作。
+>
+> 完整说明见 [README-DEV.md](../../README-DEV.md)。
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../images/zh-Hans/hero-dark.png">
   <img src="../images/zh-Hans/hero-light.png" alt="Tendedero。截图挂起来晾着。三张截图装在玻璃相框里，挂在 macOS 菜单栏下方的一根细绳上。">
