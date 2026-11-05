@@ -127,10 +127,10 @@ final class Held: NSObject {
         panel.contentAspectRatio = natural
     }
 
-    private static let slideDuration: TimeInterval = 0.32
+    private static let slideDuration: TimeInterval = 0.24
     /// How much of it the fall takes on its own, and when the opening starts.
     private static let fallShare: CGFloat = 0.82
-    private static let openDelay: CGFloat = 0.12
+    private static let openDelay: CGFloat = 0.1
 
     private static func easeOutCubic(_ t: CGFloat) -> CGFloat {
         1 - pow(1 - t, 3)
@@ -218,11 +218,10 @@ private final class HeldPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// The photo in a glass frame like the cards on the line. Dragging moves it;
-/// Command held, a drag picks out the text in the picture and copies it;
-/// scrolling up hands it back to the line. Its corner button, shown on
-/// hover like the cards' own, hangs it back too, and everything else is in
-/// its menu.
+/// The photo in a glass frame like the cards on the line. The text in it is
+/// lit up as soon as it opens: a drag across the text picks it out, and ⌘C
+/// copies what was picked. A drag anywhere else, or with Command held, moves
+/// it; a scroll up hands it back to the line; a double click does too.
 private final class HeldView: NSVisualEffectView {
     static let border: CGFloat = 6
 
@@ -236,9 +235,17 @@ private final class HeldView: NSVisualEffectView {
     private let image: NSImage
     private let photo = CALayer()
     private let hangBackButton = CornerButton(symbol: "arrow.up.to.line")
-    /// The rectangle a Command-drag is picking out, and where it began.
-    private let selection = CAShapeLayer()
-    private var selectingFrom: NSPoint?
+    /// The text read from the picture, and the two lights over it: everything
+    /// that can be picked, and what is picked.
+    private var text: PhotoText?
+    private let standing = CAShapeLayer()
+    private let pickLayer = CAShapeLayer()
+    private var pickingFrom: NSPoint?
+    /// Where the drag currently is, while one is picking text.
+    private var pickingTo: NSPoint?
+    /// What the pick holds, ready for ⌘C, and the boxes to draw over it.
+    private var picked = ""
+    private var pickedBoxes: [CGRect] = []
     private var hangBackPull: CGFloat = 0
     private var hangBackAt = Date.distantPast
 
@@ -258,19 +265,20 @@ private final class HeldView: NSVisualEffectView {
         photo.cornerRadius = 7
         photo.masksToBounds = true
         layer?.addSublayer(photo)
-        // The picking-out of text, over the photo.
-        selection.fillColor = NSColor.white.withAlphaComponent(0.16).cgColor
-        selection.strokeColor = NSColor.systemBlue.withAlphaComponent(0.9).cgColor
-        selection.lineWidth = 1
-        selection.lineDashPattern = [4, 3]
-        selection.isHidden = true
-        layer?.addSublayer(selection)
+        // Everything the picture has to offer, and what is picked of it.
+        for light in [standing, pickLayer] {
+            light.isHidden = true
+            light.fillColor = NSColor.systemYellow.withAlphaComponent(0.18).cgColor
+            layer?.addSublayer(light)
+        }
+        pickLayer.fillColor = NSColor.systemBlue.withAlphaComponent(0.30).cgColor
         hangBackButton.alphaValue = 0
         hangBackButton.onPress = { [weak self] in self?.onHangBack() }
         hangBackButton.setAccessibilityLabel(L("Hang back"))
         addSubview(hangBackButton)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
+        readText()
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -283,17 +291,129 @@ private final class HeldView: NSVisualEffectView {
         photo.contentsScale = window?.backingScaleFactor ?? 2
         CATransaction.commit()
         hangBackButton.frame = NSRect(x: 9, y: bounds.height - 29, width: 20, height: 20)
+        // The lights follow the picture as the window is stretched.
+        drawStanding()
+        drawPick()
+    }
+
+    /// The picture's own rectangle: resizeAspect may leave a margin on one
+    /// axis of the frame.
+    private var shown: NSRect {
+        let frame = photo.frame
+        let size = image.size
+        guard size.width > 0, size.height > 0, frame.width > 0, frame.height > 0 else { return frame }
+        let scale = min(frame.width / size.width, frame.height / size.height)
+        let w = size.width * scale, h = size.height * scale
+        return NSRect(x: frame.midX - w / 2, y: frame.midY - h / 2, width: w, height: h)
+    }
+
+    /// A point in the picture's own coordinates, 0…1 from the bottom left.
+    private func unit(_ point: NSPoint) -> CGPoint {
+        let area = shown
+        guard area.width > 0, area.height > 0 else { return .zero }
+        return CGPoint(x: (point.x - area.minX) / area.width, y: (point.y - area.minY) / area.height)
+    }
+
+    /// A rectangle of the picture's coordinates from two points on the view.
+    private func unitRect(from start: NSPoint, to end: NSPoint) -> CGRect {
+        let a = unit(start), b = unit(end)
+        return CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+    }
+
+    private func readText() {
+        PhotoText.read(image) { [weak self] text in
+            guard let self else { return }
+            self.text = text
+            self.drawStanding()
+        }
+    }
+
+    private func drawStanding() {
+        guard let text else {
+            standing.isHidden = true
+            return
+        }
+        let area = shown
+        let path = CGMutablePath()
+        for line in text.lines {
+            path.addRect(CGRect(x: area.minX + line.box.minX * area.width,
+                                y: area.minY + line.box.minY * area.height,
+                                width: line.box.width * area.width,
+                                height: line.box.height * area.height).insetBy(dx: -1, dy: -1))
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        standing.path = path
+        standing.isHidden = false
+        CATransaction.commit()
+    }
+
+    private func drawPick() {
+        let area = shown
+        let boxes = pickedBoxes
+        let path = CGMutablePath()
+        for box in boxes {
+            path.addRect(CGRect(x: area.minX + box.minX * area.width,
+                                y: area.minY + box.minY * area.height,
+                                width: box.width * area.width,
+                                height: box.height * area.height))
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        pickLayer.path = path
+        pickLayer.isHidden = boxes.isEmpty
+        CATransaction.commit()
+    }
+
+    private func updatePick(from start: NSPoint, to end: NSPoint) {
+        guard let text else { return }
+        pickingTo = end
+        let rect = unitRect(from: start, to: end).insetBy(dx: -0.004, dy: -0.008)
+        let picked = text.pick(in: rect)
+        self.picked = picked.text
+        pickedBoxes = picked.boxes
+        drawPick()
+    }
+
+    private func clearPick() {
+        pickingFrom = nil
+        pickingTo = nil
+        picked = ""
+        pickedBoxes = []
+        pickLayer.isHidden = true
+    }
+
+    private func copyPick() -> Bool {
+        guard !picked.isEmpty else { return false }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(picked, forType: .string)
+        flash(L("Copied"))
+        return true
     }
 
     override func updateTrackingAreas() {
         trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+        addTrackingArea(NSTrackingArea(rect: bounds,
+                                       options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
                                        owner: self))
         super.updateTrackingAreas()
     }
 
     override func mouseEntered(with event: NSEvent) { showButton(true) }
-    override func mouseExited(with event: NSEvent) { showButton(false) }
+    override func mouseExited(with event: NSEvent) {
+        showButton(false)
+        NSCursor.arrow.set()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if text?.hasText(at: unit(point)) == true, pickingFrom == nil {
+            NSCursor.iBeam.set()
+        } else if pickingFrom == nil {
+            NSCursor.arrow.set()
+        }
+    }
 
     private func showButton(_ on: Bool) {
         NSAnimationContext.runAnimationGroup { context in
@@ -314,34 +434,33 @@ private final class HeldView: NSVisualEffectView {
             onHangBack()
             return
         }
-        // Command and a drag pick out the text in the picture, like Live Text.
-        if event.modifierFlags.contains(.command) {
-            window?.makeKey()
-            window?.makeFirstResponder(self)
-            selectingFrom = point
-            showSelection(from: point, to: point)
-            return
-        }
         // Option on its own does nothing, so an Option double click stays put.
         if event.modifierFlags.contains(.option) { return }
         window?.makeKey()
         window?.makeFirstResponder(self)
+        // Text under the pointer is picked; anywhere else, or with Command
+        // held, the photo is moved.
+        if !event.modifierFlags.contains(.command), text?.hasText(at: unit(point)) == true {
+            clearPick()
+            pickingFrom = point
+            pickingTo = point
+            return
+        }
+        clearPick()
         window?.performDrag(with: event)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let start = selectingFrom else { return }
-        showSelection(from: start, to: convert(event.locationInWindow, from: nil))
+        guard let start = pickingFrom else { return }
+        updatePick(from: start, to: convert(event.locationInWindow, from: nil))
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard let start = selectingFrom else { return }
-        selectingFrom = nil
-        let end = convert(event.locationInWindow, from: nil)
-        showSelection(from: start, to: NSPoint(x: start.x, y: start.y))
-        let rect = Self.rect(from: start, to: end).intersection(photo.frame)
-        guard rect.width >= 4, rect.height >= 4 else { return }
-        copyText(in: rect)
+        guard let start = pickingFrom else { return }
+        updatePick(from: start, to: convert(event.locationInWindow, from: nil))
+        pickingFrom = nil
+        pickingTo = nil
+        NSCursor.arrow.set()
     }
 
     override func magnify(with event: NSEvent) {
@@ -375,61 +494,34 @@ private final class HeldView: NSVisualEffectView {
         onHangBack()
     }
 
-    private func showSelection(from start: NSPoint, to end: NSPoint) {
-        let rect = Self.rect(from: start, to: end)
-        selection.path = CGPath(rect: rect, transform: nil)
-        selection.isHidden = rect.width < 1 && rect.height < 1
-    }
-
-    private static func rect(from a: NSPoint, to b: NSPoint) -> NSRect {
-        NSRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
-    }
-
-    /// The part of the picture that was picked out, read with Vision and put
-    /// on the clipboard as plain text.
-    private func copyText(in rect: NSRect) {
-        let frame = photo.frame
-        guard frame.width > 0, frame.height > 0,
-              let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
-        let w = CGFloat(cg.width), h = CGFloat(cg.height)
-        // The photo is drawn to fit its frame, so the picture inside it may
-        // be letterboxed by a few points.
-        let scale = min(frame.width / w, frame.height / h)
-        let shown = NSRect(x: frame.midX - w * scale / 2, y: frame.midY - h * scale / 2,
-                           width: w * scale, height: h * scale)
-        let crop = CGRect(x: (rect.minX - shown.minX) / shown.width * w,
-                          y: (1 - (rect.maxY - shown.minY) / shown.height) * h,
-                          width: rect.width / shown.width * w,
-                          height: rect.height / shown.height * h).intersection(CGRect(x: 0, y: 0, width: w, height: h))
-        guard crop.width >= 1, crop.height >= 1, let part = cg.cropping(to: crop) else { return }
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let text = Self.text(in: part)
-            DispatchQueue.main.async {
-                guard let self else { return }
-                guard !text.isEmpty else {
-                    self.flash(L("No text"))
-                    NSSound.beep()
-                    return
-                }
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(text, forType: .string)
-                self.flash(L("Copied"))
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {
+            // Escape first puts down what was picked, then the photo itself.
+            if !picked.isEmpty {
+                clearPick()
+            } else {
+                onHangBack()
             }
+        } else if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "c" {
+            if !copyPick() { onCopy() }
+        } else {
+            super.keyDown(with: event)
         }
     }
 
-    /// All the text Vision finds in the part, top to bottom.
-    private static func text(in image: CGImage) -> String {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = true
-        let handler = VNImageRequestHandler(cgImage: image, options: [:])
-        guard (try? handler.perform([request])) != nil else { return "" }
-        let lines = (request.results ?? [])
-            .sorted { $0.boundingBox.maxY > $1.boundingBox.maxY }
-            .compactMap { $0.topCandidates(1).first?.string }
-        return lines.joined(separator: "\n")
+    override func rightMouseDown(with event: NSEvent) {
+        let menu = NSMenu()
+        if !picked.isEmpty {
+            menu.addItem(ClosureMenuItem(L("Copy text")) { [weak self] in _ = self?.copyPick() })
+            menu.addItem(.separator())
+        }
+        menu.addItem(ClosureMenuItem(L("Hang back")) { [weak self] in self?.onHangBack() })
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem(L("Copy")) { [weak self] in self?.onCopy() })
+        menu.addItem(ClosureMenuItem(L("Quick Look")) { [weak self] in self?.onQuickLook() })
+        menu.addItem(ClosureMenuItem(L("Markup")) { [weak self] in self?.onMarkup() })
+        menu.addItem(ClosureMenuItem(L("Actual Size")) { [weak self] in self?.onActualSize() })
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
     /// A small word over the photo, for a moment: what just happened.
@@ -464,27 +556,6 @@ private final class HeldView: NSVisualEffectView {
                 }, completionHandler: { box.removeFromSuperview() })
             }
         })
-    }
-
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
-            onHangBack()
-        } else if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "c" {
-            onCopy()
-        } else {
-            super.keyDown(with: event)
-        }
-    }
-
-    override func rightMouseDown(with event: NSEvent) {
-        let menu = NSMenu()
-        menu.addItem(ClosureMenuItem(L("Hang back")) { [weak self] in self?.onHangBack() })
-        menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem(L("Copy")) { [weak self] in self?.onCopy() })
-        menu.addItem(ClosureMenuItem(L("Quick Look")) { [weak self] in self?.onQuickLook() })
-        menu.addItem(ClosureMenuItem(L("Markup")) { [weak self] in self?.onMarkup() })
-        menu.addItem(ClosureMenuItem(L("Actual Size")) { [weak self] in self?.onActualSize() })
-        NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 }
 
