@@ -1197,6 +1197,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         keepItem.submenu = keeps
         menu.addItem(keepItem)
 
+        let holdItem = NSMenuItem(title: L("Hold to make it a file"), action: nil, keyEquivalent: "")
+        let holds = NSMenu()
+        for seconds in Held.holdChoices {
+            let title = String(format: L("%.1f s"), seconds)
+            let item = ClosureMenuItem(title) { Held.holdDelay = seconds }
+            item.state = abs(Held.holdDelay - seconds) < 0.01 ? .on : .off
+            holds.addItem(item)
+        }
+        holdItem.submenu = holds
+        menu.addItem(holdItem)
+
         let sizeItem = NSMenuItem(title: L("Size"), action: nil, keyEquivalent: "")
         let sizes = NSMenu()
         for (size, title) in [(Layout.Size.small, L("Small")), (.medium, L("Medium")), (.large, L("Large"))] {

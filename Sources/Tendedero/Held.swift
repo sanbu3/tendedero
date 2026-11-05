@@ -22,10 +22,10 @@ final class Held: NSObject {
     private let url: URL
     /// What it shows, kept so the flight back to the line can start at once.
     private let image: NSImage
-    /// The small file form, after a long press.
-    private var thumb: FileThumbView?
     /// The size it had before it went small, to come back to.
     private var fullFrame: NSRect?
+    /// The drag of the file itself, while it lasts.
+    private var dragSource: FileDragSource?
     /// Its size at 100%, in points.
     private let natural: NSSize
     /// The frame-by-frame slide off the line, while it runs.
@@ -38,6 +38,18 @@ final class Held: NSObject {
     private let onHangBack: (UUID, CGRect, NSImage) -> Void
 
     static var heldIDs: Set<UUID> { Set(open.keys) }
+
+    /// How long the button must be held before the photo becomes its file.
+    /// Two seconds by default; the menu bar changes it.
+    static var holdDelay: TimeInterval {
+        get {
+            let saved = UserDefaults.standard.double(forKey: "holdDelay")
+            return saved > 0 ? saved : 2
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "holdDelay") }
+    }
+
+    static let holdChoices: [TimeInterval] = [1.5, 2, 3]
 
     /// `from` is where the card hangs on the line, so the photo can slide
     /// off it; without it, the photo simply opens in the middle.
@@ -84,7 +96,11 @@ final class Held: NSObject {
         view.onCopy = { line.copy(id) }
         view.onMarkup = { line.markup(id) }
         view.onQuickLook = { line.quickLook(id) }
-        view.onLongPress = { [weak self] in self?.shrinkToFile() }
+        view.onRelease = { [weak self] in self?.releaseFileIcon() }
+        view.onLongPress = { [weak self, weak view] (event: NSEvent) in
+            guard let self, let view else { return }
+            self.shrinkToIcon(event: event, from: view)
+        }
         // Stretched from an edge or a corner, it keeps the photo's shape.
         panel.minSize = NSSize(width: 80, height: 80)
         let target = startFrame(on: screen)
@@ -177,44 +193,90 @@ final class Held: NSObject {
                               width: natural.width, height: natural.height), display: true)
     }
 
-    /// Held down, it turns into the file itself: a small thumbnail that can
-    /// be dragged into another app, copied, or shared. The photo is still
-    /// held; Hang back still sends it home.
-    private func shrinkToFile() {
-        guard thumb == nil else { return }
+    /// Held down, it turns into the file itself: the photo shrunk to an icon
+    /// that follows the pointer, so it can be dropped on another app or a
+    /// folder. Letting go brings the photo back.
+    private func shrinkToIcon(event: NSEvent, from view: HeldView) {
+        guard dragSource == nil, fullFrame == nil else { return }
+        guard let icon = Self.fileIcon(image) else { return }
         fullFrame = panel.frame
-        let small = FileThumbView(url: url)
-        small.onHangBack = { [weak self] in self?.hangBack() }
-        small.onRestore = { [weak self] in self?.growBack() }
-        thumb = small
-        let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
-        let size = FileThumbView.size
-        let target = NSRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
-                            width: size.width, height: size.height)
+        let cursor = NSEvent.mouseLocation
+        let target = NSRect(x: cursor.x - icon.size.width / 2, y: cursor.y - icon.size.height / 2,
+                            width: icon.size.width, height: icon.size.height)
         panel.contentAspectRatio = .zero
-        panel.contentView = small
-        panel.makeFirstResponder(small)
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.22
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.14
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().setFrame(target, display: true)
-        }
+        }, completionHandler: { [weak self] in
+            guard let self else { return }
+            self.startFileDrag(icon: icon, event: event, from: view)
+        })
     }
 
-    /// Double clicked in its small form: the photo again.
-    private func growBack() {
-        guard let thumb else { return }
-        let target = fullFrame ?? panel.frame
-        self.thumb = nil
-        panel.contentAspectRatio = natural
-        panel.contentView = view
-        panel.makeFirstResponder(view)
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.22
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().setFrame(target, display: true)
+    /// The photo shrunk into a small icon, the way a file looks when carried.
+    private static func fileIcon(_ image: NSImage) -> NSImage? {
+        let side: CGFloat = 96
+        let size = image.size
+        guard size.width > 0, size.height > 0 else { return nil }
+        let icon = NSImage(size: NSSize(width: side, height: side))
+        icon.lockFocus()
+        defer { icon.unlockFocus() }
+        let rect = NSRect(x: 0, y: 0, width: side, height: side)
+        let shape = NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 10, yRadius: 10)
+        NSGraphicsContext.saveGraphicsState()
+        shape.addClip()
+        // The picture fills the icon, cropped evenly where it is not square.
+        var source = NSRect(origin: .zero, size: size)
+        if size.width > size.height {
+            source = NSRect(x: (size.width - size.height) / 2, y: 0, width: size.height, height: size.height)
+        } else if size.height > size.width {
+            source = NSRect(x: 0, y: (size.height - size.width) / 2, width: size.width, height: size.width)
         }
-        _ = thumb
+        image.draw(in: rect, from: source, operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        NSColor.white.withAlphaComponent(0.5).setStroke()
+        shape.lineWidth = 1
+        shape.stroke()
+        return icon
+    }
+
+    /// The file, under the pointer, to drop where it is let go.
+    private func startFileDrag(icon: NSImage, event: NSEvent, from view: HeldView) {
+        // Let go while the photo was still shrinking: nothing to drag.
+        guard NSEvent.pressedMouseButtons & 1 != 0 else {
+            endFileDrag()
+            return
+        }
+        let source = FileDragSource(url: url) { [weak self] in self?.endFileDrag() }
+        dragSource = source
+        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+        item.setDraggingFrame(NSRect(origin: .zero, size: icon.size), contents: icon)
+        let session = view.beginDraggingSession(with: [item], event: event, source: source)
+        session.animatesToStartingPositionsOnCancelOrFail = false
+        // The icon under the pointer is the photo now; the window waits it out.
+        panel.orderOut(nil)
+    }
+
+    /// The button was let go before the file could be carried: the photo
+    /// comes straight back rather than staying small.
+    private func releaseFileIcon() {
+        guard fullFrame != nil, dragSource == nil else { return }
+        endFileDrag()
+    }
+
+    /// Let go: the photo is back, the size it was.
+    private func endFileDrag() {
+        dragSource = nil
+        guard let full = fullFrame else { return }
+        fullFrame = nil
+        panel.contentAspectRatio = natural
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(full, display: true)
+        }
     }
 
     /// Hands it to the flight: the window stays until the app says the photo
@@ -276,7 +338,9 @@ private final class HeldView: NSVisualEffectView {
     static let border: CGFloat = 6
 
     var onHangBack: () -> Void = {}
-    var onLongPress: () -> Void = {}
+    var onLongPress: (NSEvent) -> Void = { _ in }
+    /// The button came up, whatever it was doing.
+    var onRelease: () -> Void = {}
     var onZoom: (CGFloat, NSPoint) -> Void = { _, _ in }
     var onActualSize: () -> Void = {}
     var onCopy: () -> Void = {}
@@ -303,6 +367,8 @@ private final class HeldView: NSVisualEffectView {
     /// Holding the button down turns the photo into its file.
     private let holdRing = CAShapeLayer()
     private var holdTimer: Timer?
+    private var ringTimer: Timer?
+    private var pressEvent: NSEvent?
     private var pressAt: NSPoint?
     private var pressScreen: NSPoint?
     private var pressOrigin: NSPoint?
@@ -310,8 +376,6 @@ private final class HeldView: NSVisualEffectView {
     private var copyKeyDown = false
     private var hangBackPull: CGFloat = 0
     private var hangBackAt = Date.distantPast
-
-    private static let longPress: TimeInterval = 2.5
 
     init(image: NSImage, url: URL) {
         self.image = image
@@ -541,18 +605,26 @@ private final class HeldView: NSVisualEffectView {
             pickingTo = point
             return
         }
-        beginPress(at: point)
+        beginPress(at: point, event: event)
     }
 
     /// Press and hold without moving: after a moment the photo becomes its
-    /// file. A ring fills around the pointer so the wait shows.
-    private func beginPress(at point: NSPoint) {
+    /// file. The ring only shows after a short grace, so a quick press leaves
+    /// nothing on the screen.
+    private func beginPress(at point: NSPoint, event: NSEvent) {
+        pressEvent = event
         pressAt = point
         pressScreen = NSEvent.mouseLocation
         pressOrigin = window?.frame.origin
         moving = false
-        showRing(at: point)
-        let timer = Timer(timeInterval: Self.longPress, repeats: false) { [weak self] _ in
+        let delay = Held.holdDelay
+        let ringDelay = min(0.5, delay * 0.35)
+        let ring = Timer(timeInterval: ringDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.showRing(fillingOver: max(0.2, delay - ringDelay)) }
+        }
+        RunLoop.main.add(ring, forMode: .common)
+        ringTimer = ring
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.longPressFired() }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -561,24 +633,29 @@ private final class HeldView: NSVisualEffectView {
 
     private func longPressFired() {
         holdTimer = nil
-        guard let pressAt, !moving else { return }
+        ringTimer?.invalidate()
+        ringTimer = nil
+        guard let pressEvent, let pressAt, !moving else { return }
         hideRing()
         self.pressAt = nil
-        onLongPress()
+        self.pressEvent = nil
+        onLongPress(pressEvent)
     }
 
-    private func showRing(at point: NSPoint) {
+    private func showRing(fillingOver duration: TimeInterval) {
+        guard let pressAt, !moving else { return }
         let radius: CGFloat = 13
-        let circle = CGPath(ellipseIn: NSRect(x: point.x - radius, y: point.y - radius,
+        let circle = CGPath(ellipseIn: NSRect(x: pressAt.x - radius, y: pressAt.y - radius,
                                               width: radius * 2, height: radius * 2), transform: nil)
         holdRing.removeAllAnimations()
         holdRing.path = circle
-        holdRing.strokeEnd = 1
+        holdRing.strokeEnd = 0
         holdRing.isHidden = false
         let fill = CABasicAnimation(keyPath: "strokeEnd")
         fill.fromValue = 0
         fill.toValue = 1
-        fill.duration = Self.longPress
+        fill.duration = duration
+        fill.isRemovedOnCompletion = false
         holdRing.add(fill, forKey: "hold")
         holdRing.strokeEnd = 1
     }
@@ -591,6 +668,9 @@ private final class HeldView: NSVisualEffectView {
     private func endPress() {
         holdTimer?.invalidate()
         holdTimer = nil
+        ringTimer?.invalidate()
+        ringTimer = nil
+        pressEvent = nil
         pressAt = nil
         hideRing()
     }
@@ -624,6 +704,7 @@ private final class HeldView: NSVisualEffectView {
         endPress()
         pressOrigin = nil
         pressScreen = nil
+        onRelease()
     }
 
     override func magnify(with event: NSEvent) {
@@ -710,124 +791,25 @@ private final class HeldView: NSVisualEffectView {
     }
 }
 
-/// The photo as the file it is: a small Finder thumbnail that can be dragged
-/// into another app, copied with ⌘C or C, or shared from its menu. A double
-/// click gives the photo back.
-private final class FileThumbView: NSVisualEffectView, NSDraggingSource {
-    static let size = NSSize(width: 132, height: 132)
-
+/// The file being carried by the pointer, until it is let go.
+private final class FileDragSource: NSObject, NSDraggingSource {
     let url: URL
-    var onHangBack: () -> Void = {}
-    var onRestore: () -> Void = {}
+    private let onEnd: () -> Void
 
-    private let iconView = NSImageView()
-    private var pressAt: NSPoint?
-
-    init(url: URL) {
+    init(url: URL, onEnd: @escaping () -> Void) {
         self.url = url
-        super.init(frame: .zero)
-        material = .popover
-        blendingMode = .behindWindow
-        state = .active
-        wantsLayer = true
-        layer?.cornerRadius = 16
-        layer?.masksToBounds = true
-        layer?.borderWidth = 0.5
-        layer?.borderColor = NSColor.white.withAlphaComponent(0.5).cgColor
-        iconView.image = NSWorkspace.shared.icon(forFile: url.path)
-        iconView.imageScaling = .scaleProportionallyUpOrDown
-        addSubview(iconView)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.button)
-        setAccessibilityLabel(url.lastPathComponent)
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func layout() {
-        super.layout()
-        iconView.frame = bounds.insetBy(dx: 16, dy: 16)
-    }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override var acceptsFirstResponder: Bool { true }
-    override var mouseDownCanMoveWindow: Bool { false }
-
-    override func mouseDown(with event: NSEvent) {
-        if event.clickCount == 2 {
-            onRestore()
-            return
-        }
-        window?.makeKey()
-        window?.makeFirstResponder(self)
-        pressAt = convert(event.locationInWindow, from: nil)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard let start = pressAt else { return }
-        let point = convert(event.locationInWindow, from: nil)
-        guard hypot(point.x - start.x, point.y - start.y) > 3 else { return }
-        pressAt = nil
-        dragFile(with: event)
-    }
-
-    /// The file, to whatever app it is dropped on.
-    private func dragFile(with event: NSEvent) {
-        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
-        item.setDraggingFrame(NSRect(origin: .zero, size: NSSize(width: 96, height: 96)),
-                              contents: iconView.image ?? NSImage())
-        let session = beginDraggingSession(with: [item], event: event, source: self)
-        session.animatesToStartingPositionsOnCancelOrFail = true
+        self.onEnd = onEnd
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         [.copy, .generic]
     }
 
-    private func copyFile() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.writeObjects([url as NSURL])
-        FlashWord.show(L("Copied"), in: self)
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        onEnd()
     }
 
-    private func share() {
-        NSSharingServicePicker(items: [url]).show(relativeTo: iconView.bounds, of: iconView, preferredEdge: .minY)
-    }
-
-    override func scrollWheel(with event: NSEvent) {
-        let device = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaY : event.scrollingDeltaY
-        guard device > 0, event.momentumPhase.isEmpty else { return }
-        onHangBack()
-    }
-
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
-            onHangBack()
-            return
-        }
-        let plain = event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
-        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "c" {
-            copyFile()
-            return
-        }
-        if plain, event.charactersIgnoringModifiers == "c",
-           window?.frame.contains(NSEvent.mouseLocation) == true {
-            copyFile()
-            return
-        }
-        super.keyDown(with: event)
-    }
-
-    override func rightMouseDown(with event: NSEvent) {
-        let menu = NSMenu()
-        menu.addItem(ClosureMenuItem(L("Copy")) { [weak self] in self?.copyFile() })
-        menu.addItem(ClosureMenuItem(L("Share")) { [weak self] in self?.share() })
-        menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem(L("Back to the photo")) { [weak self] in self?.onRestore() })
-        menu.addItem(ClosureMenuItem(L("Hang back")) { [weak self] in self?.onHangBack() })
-        NSMenu.popUpContextMenu(menu, with: event, for: self)
-    }
+    func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { false }
 }
 
 /// A small word over a view for a moment: what just happened.
