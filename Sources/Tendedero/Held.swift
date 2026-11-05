@@ -44,12 +44,12 @@ final class Held: NSObject {
     static var holdDelay: TimeInterval {
         get {
             let saved = UserDefaults.standard.double(forKey: "holdDelay")
-            return saved > 0 ? saved : 2
+            return saved > 0 ? saved : 1.2
         }
         set { UserDefaults.standard.set(newValue, forKey: "holdDelay") }
     }
 
-    static let holdChoices: [TimeInterval] = [1.5, 2, 3]
+    static let holdChoices: [TimeInterval] = [0.8, 1.2, 1.8]
 
     /// `from` is where the card hangs on the line, so the photo can slide
     /// off it; without it, the photo simply opens in the middle.
@@ -193,15 +193,18 @@ final class Held: NSObject {
                               width: natural.width, height: natural.height), display: true)
     }
 
-    /// Held down, it turns into the file itself: the photo shrunk to an icon
-    /// that follows the pointer, so it can be dropped on another app or a
-    /// folder. Letting go brings the photo back.
+    /// Held down, it turns into the file itself: the photo, whole and in
+    /// proportion, on a small page. The pointer holds it by its bottom right
+    /// corner, the way a file comes out of the Finder, and it goes where it
+    /// is let go.
     private func shrinkToIcon(event: NSEvent, from view: HeldView) {
         guard dragSource == nil, fullFrame == nil else { return }
         guard let icon = Self.fileIcon(image) else { return }
         fullFrame = panel.frame
         let cursor = NSEvent.mouseLocation
-        let target = NSRect(x: cursor.x - icon.size.width / 2, y: cursor.y - icon.size.height / 2,
+        let inset: CGFloat = 18
+        let target = NSRect(x: cursor.x - icon.size.width + inset,
+                            y: cursor.y - inset,
                             width: icon.size.width, height: icon.size.height)
         panel.contentAspectRatio = .zero
         NSAnimationContext.runAnimationGroup({ context in
@@ -214,30 +217,36 @@ final class Held: NSObject {
         })
     }
 
-    /// The photo shrunk into a small icon, the way a file looks when carried.
+    /// The picture on a small white page: what an image file looks like in
+    /// the Finder, and what is carried now.
     private static func fileIcon(_ image: NSImage) -> NSImage? {
-        let side: CGFloat = 96
+        let page = NSSize(width: 88, height: 112)
         let size = image.size
         guard size.width > 0, size.height > 0 else { return nil }
-        let icon = NSImage(size: NSSize(width: side, height: side))
+        let icon = NSImage(size: page)
         icon.lockFocus()
         defer { icon.unlockFocus() }
-        let rect = NSRect(x: 0, y: 0, width: side, height: side)
-        let shape = NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 10, yRadius: 10)
+        let rect = NSRect(origin: .zero, size: page)
+        let pagePath = NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 7, yRadius: 7)
+        NSColor.white.setFill()
+        pagePath.fill()
+        // The picture, whole and in proportion, inside the page.
+        let margin: CGFloat = 7
+        let inner = rect.insetBy(dx: margin, dy: margin)
+        let scale = min(inner.width / size.width, inner.height / size.height)
+        let w = size.width * scale, h = size.height * scale
+        let photo = NSRect(x: inner.midX - w / 2, y: inner.midY - h / 2, width: w, height: h)
+        let photoPath = NSBezierPath(roundedRect: photo, xRadius: 3, yRadius: 3)
         NSGraphicsContext.saveGraphicsState()
-        shape.addClip()
-        // The picture fills the icon, cropped evenly where it is not square.
-        var source = NSRect(origin: .zero, size: size)
-        if size.width > size.height {
-            source = NSRect(x: (size.width - size.height) / 2, y: 0, width: size.height, height: size.height)
-        } else if size.height > size.width {
-            source = NSRect(x: 0, y: (size.height - size.width) / 2, width: size.width, height: size.width)
-        }
-        image.draw(in: rect, from: source, operation: .sourceOver, fraction: 1)
+        photoPath.addClip()
+        image.draw(in: photo, from: .zero, operation: .sourceOver, fraction: 1)
         NSGraphicsContext.restoreGraphicsState()
-        NSColor.white.withAlphaComponent(0.5).setStroke()
-        shape.lineWidth = 1
-        shape.stroke()
+        NSColor.black.withAlphaComponent(0.18).setStroke()
+        photoPath.lineWidth = 0.5
+        photoPath.stroke()
+        NSColor.black.withAlphaComponent(0.12).setStroke()
+        pagePath.lineWidth = 1
+        pagePath.stroke()
         return icon
     }
 
@@ -618,7 +627,7 @@ private final class HeldView: NSVisualEffectView {
         pressOrigin = window?.frame.origin
         moving = false
         let delay = Held.holdDelay
-        let ringDelay = min(0.5, delay * 0.35)
+        let ringDelay = min(0.4, delay * 0.3)
         let ring = Timer(timeInterval: ringDelay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.showRing(fillingOver: max(0.2, delay - ringDelay)) }
         }
@@ -643,7 +652,7 @@ private final class HeldView: NSVisualEffectView {
     }
 
     private func showRing(fillingOver duration: TimeInterval) {
-        guard let pressAt, !moving else { return }
+        guard let pressAt, !moving, holdRing.isHidden else { return }
         let radius: CGFloat = 13
         let circle = CGPath(ellipseIn: NSRect(x: pressAt.x - radius, y: pressAt.y - radius,
                                               width: radius * 2, height: radius * 2), transform: nil)
@@ -683,7 +692,7 @@ private final class HeldView: NSVisualEffectView {
         guard let origin = pressOrigin, let from = pressScreen else { return }
         let now = NSEvent.mouseLocation
         let moved = hypot(now.x - from.x, now.y - from.y)
-        guard moving || moved > 3 else { return }
+        guard moving || moved > 6 else { return }
         if !moving {
             moving = true
             holdTimer?.invalidate()
