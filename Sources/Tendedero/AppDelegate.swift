@@ -13,8 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var watcher: ScreenshotWatcher!
     /// In inbox mode, a second watcher on the Desktop. If a macOS version
-    /// ignores the screenshot settings (macOS 27 renamed one), captures keep
-    /// landing on the Desktop, and they still hang on the line.
+    /// ignores the screenshot settings (macOS 27 renamed one), or another app
+    /// saves there, the capture is taken into the queue, and the Desktop
+    /// stays clear.
     private var safetyWatcher: ScreenshotWatcher?
     /// Folders chosen in "Also watch folders", like the one another
     /// screenshot app saves to.
@@ -158,9 +159,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
-        if !Inbox.wasOffered {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.offerInbox() }
-        }
+        // The Desktop keeps nothing: captures that landed there while the
+        // app was closed are taken into the queue, and so is what waited in
+        // the folder. The queue is trimmed first.
+        DispatchQueue.main.async { [weak self] in self?.adoptWaitingCaptures() }
 
         if !UserDefaults.standard.bool(forKey: "welcomed") {
             UserDefaults.standard.set(true, forKey: "welcomed")
@@ -178,7 +180,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        if Inbox.isEnabled { Inbox.restore() }
+        if Inbox.isEnabled {
+            Inbox.lastQuit = Date()
+            Inbox.restore()
+        }
         Share.shared.clearAll()
     }
 
@@ -196,10 +201,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let safety = ScreenshotWatcher(
                 folder: ScreenshotWatcher.desktop,
                 onNew: { [weak self] url in
-                    log.notice("Screenshot landed on the Desktop despite inbox mode: \(url.lastPathComponent, privacy: .public)")
-                    self?.hangCapture(url)
+                    // macOS is meant to save into the queue, so this one
+                    // slipped through, or came from another app: it joins the
+                    // queue too, and the Desktop stays clear.
+                    guard let self else { return }
+                    guard let moved = Inbox.adopt(url) else {
+                        self.hangCapture(url)
+                        return
+                    }
+                    log.notice("Took a Desktop capture into the queue: \(moved.lastPathComponent, privacy: .public)")
+                    self.hangCapture(moved)
                 },
-                onChange: { [weak self] in self?.line.prune() })
+                onChange: { [weak self] in
+                    self?.line.prune()
+                    Inbox.enforceQueue(keeping: self?.onLinePaths ?? [])
+                })
             safety.start()
             safetyWatcher = safety
         }
@@ -289,20 +305,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Inbox.isEnabled = on
         if on { Inbox.apply() } else { Inbox.restore() }
         startWatcher()
+        if on { adoptWaitingCaptures() }
     }
 
-    /// Asked once. Changing system settings is the user's call, never ours.
-    private func offerInbox() {
-        Inbox.wasOffered = true
-        let alert = NSAlert()
-        alert.messageText = L("Let Tendedero handle your screenshots?")
-        alert.informativeText = L(
-            "Screenshots will hang on the line the instant you take them, without the floating thumbnail, and will not pile up on your Desktop. Drag one to a folder to keep it, or discard it with the cross. You can turn this off from the menu bar, and your settings come back when Tendedero quits.")
-        alert.addButton(withTitle: L("Turn on"))
-        alert.addButton(withTitle: L("Not now"))
-        if let icon = NSImage(named: "Tendedero") ?? NSApp.applicationIconImage { alert.icon = icon }
-        NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn { setInbox(true) }
+    /// Takes in what the queue is holding and what the Desktop got while the
+    /// app was closed, hanging the captures that are not on the line yet.
+    private func adoptWaitingCaptures() {
+        guard Inbox.isEnabled else { return }
+        if let since = Inbox.lastQuit {
+            let moved = Inbox.adoptDesktopSince(since)
+            if moved > 0 { log.notice("Took in \(moved) captures from the Desktop") }
+            Inbox.lastQuit = nil
+        }
+        Inbox.enforceQueue(keeping: onLinePaths)
+        let waiting = Inbox.queuedFiles().filter { !onLinePaths.contains($0.standardizedFileURL.path) }
+        guard !waiting.isEmpty else { return }
+        comeDown(on: nil)
+        // Quietly, oldest first: restoring the queue is not a fanfare, and
+        // the decodes stay off the main thread and in order.
+        for url in waiting {
+            decodeThumbnail(url) { [weak self] thumb in
+                guard let self else { return }
+                self.line.hang(url, quietly: true, thumb: thumb)
+            }
+        }
     }
 
     /// Watching the clipboard is opt in, from the menu bar only.
@@ -319,7 +345,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             signal(sig, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
             source.setEventHandler {
-                if Inbox.isEnabled { Inbox.restore() }
+                if Inbox.isEnabled {
+                    Inbox.lastQuit = Date()
+                    Inbox.restore()
+                }
                 exit(0)
             }
             source.resume()
@@ -366,6 +395,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // the line over to the screen it was first taken on.
         guard !line.items.contains(where: { $0.url.standardizedFileURL == url.standardizedFileURL && !$0.falling })
         else { return }
+        // A capture joining the queue takes the oldest one down once it is
+        // full. The line's own photos are left to the line.
+        if Inbox.contains(url) { Inbox.enforceQueue(keeping: onLinePaths) }
         let from = captureRect(of: url)
         let screen = from.flatMap { from in
             NSScreen.screens.first { NSMouseInRect(CGPoint(x: from.midX, y: from.midY), $0.frame, false) }
@@ -449,6 +481,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
               let card = cardFrame(for: item.id),
               let image = item.thumb.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
         CaptureFlight.fall(image: image, card: card, tilt: CGFloat(item.tilt), pinned: item.kept, on: screen)
+    }
+
+    /// The files the line is showing, so the queue does not take one down
+    /// that is already about to leave the line.
+    private var onLinePaths: Set<String> {
+        Set(line.items.map { $0.url.standardizedFileURL.path })
     }
 
     /// Where a card will hang, in screen coordinates, using the same layout
@@ -925,6 +963,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let fits = max(3, min(12, Int(usable / Layout.spacing)))
         line.visibleCount = fits
         line.maxItems = max(fits, Line.keepOnLine ?? fits)
+        // The folder is the line's queue: it holds exactly what the line keeps.
+        Inbox.capacity = line.maxItems
     }
 
     // MARK: Menu bar

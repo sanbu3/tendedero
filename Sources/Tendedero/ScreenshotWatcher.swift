@@ -292,10 +292,12 @@ final class ScreenshotWatcher {
     private func isCandidate(_ url: URL) -> Bool {
         if isRecording(url) { return acceptsRecordings }
         guard Self.imageExtensions.contains(url.pathExtension.lowercased()) else { return false }
-        return onlyTaggedScreenshots ? isScreenCapture(url) : true
+        return onlyTaggedScreenshots ? Self.isScreenCapture(url) : true
     }
 
-    private func isScreenCapture(_ url: URL) -> Bool {
+    /// Whether macOS tagged this file as a screenshot it took: a screenshot
+    /// saved by another app, or dragged onto the Desktop, carries no tag.
+    static func isScreenCapture(_ url: URL) -> Bool {
         url.withUnsafeFileSystemRepresentation { path in
             guard let path else { return false }
             return getxattr(path, "com.apple.metadata:kMDItemIsScreenCapture", nil, 0, 0, 0) >= 0

@@ -1,6 +1,6 @@
 # Tendedero Dev — 顶部中间悬停版
 
-这是基于 [alejandrobujan/tendedero](https://github.com/alejandrobujan/tendedero) v1.6.0 的个人二次开发版。它作为独立的 **Tendedero Dev** 构建，不会覆盖或修改你正在使用的原生 `/Applications/Tendedero.app`。
+这是基于 [alejandrobujan/tendedero](https://github.com/alejandrobujan/tendedero) 的个人二次开发版（已同步上游到 v1.8.1）。它作为独立的 **Tendedero Dev** 构建，不会覆盖或修改你正在使用的原生 `/Applications/Tendedero.app`。
 
 ## 交互改动
 
@@ -35,7 +35,19 @@
 
 这样中键和快捷键不会误删用户自己的外部文件。
 
-### 3. 独立身份，便于与原生版共存
+### 3. 接管桌面截图，并排成队列
+
+macOS 默认把截图放在桌面。本版默认**接管**这个动作：
+
+- 首次运行时把系统截图位置（`location` / `location-screenshot` / `location-screenrecording`）指到 App 自己的目录，并关闭浮动缩略图，截图落盘后立刻挂到绳上；
+- 仍在桌面生成的截图（系统设置被别处改回、或用其他工具存的）也会被**移入**这个目录，桌面保持干净；
+- App 没运行时落在桌面的截图，下次启动时按上次退出时间一并收进队列；
+- 目录是**队列**：每张新图进队，队满时最旧的出队（移到废纸篓），容量与晾衣绳的「Keep on line」一致（默认可放下几张就存几张，设了 Keep on line 就是 25/50/100）；
+- 退出 App 时把系统设置还回去，不留下没人看管的截图目录。
+
+可在菜单栏「Handle screenshots」里整体关掉。
+
+### 4. 独立身份，便于与原生版共存
 
 | | 原生版 | 开发版 |
 |:--|:--|:--|
@@ -79,8 +91,8 @@ scripts/build-app.sh
 
 | 文件 | 作用 |
 |:--|:--|
-| `Sources/Tendedero/AppDelegate.swift` | 顶部中间热区、延迟状态机、提示窗显隐、快捷键与菜单 |
-| `Sources/Tendedero/HoverHintPanel.swift` | 顶部中央的小拉锁提示、拉链动画、自定义光标 |
+| `Sources/Tendedero/AppDelegate.swift` | 顶部中间热区、截图接管、队列进出、快捷键与菜单 |
+| `Sources/Tendedero/Inbox.swift` | 截图接管目录、队列容量与出队、桌面截图收编 |
 | `Sources/Tendedero/GrabArea.swift` | 双击复制、中键删除、右键原生菜单、拖拽 |
 | `Sources/Tendedero/PeggedView.swift` | 鼠标悬停到具体图片时记录 `hoveredID` |
 | `Sources/Tendedero/HotKey.swift` | 多快捷键 Carbon 注册、删除快捷键、录制器 |
