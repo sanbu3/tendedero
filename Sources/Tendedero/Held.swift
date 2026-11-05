@@ -81,6 +81,7 @@ final class Held: NSObject {
         // Holding it means it takes the keys: Escape and ⌘C work at once, and
         // the first drag is a drag, not the click that makes it key.
         panel.makeKey()
+        panel.makeFirstResponder(view)
         if let from {
             slideIn(from: from, to: target)
         } else {
