@@ -28,7 +28,7 @@ func captureRect(of url: URL) -> CGRect? {
 /// its glass frame and clip, so there is nothing left to change on landing.
 @MainActor
 final class CaptureFlight {
-    static let duration: CFTimeInterval = 0.65
+    static let duration: CFTimeInterval = 0.42
     /// How high the gentle arc rises halfway, in points.
     private static let arc: CGFloat = 30
 
@@ -82,7 +82,7 @@ final class CaptureFlight {
                                   NSColor(white: 0.38, alpha: 1).cgColor, NSColor(white: 0.24, alpha: 1).cgColor]
             flight.clip.borderColor = NSColor(white: 1, alpha: 0.35).cgColor
         }
-        flight.duration = 0.55
+        flight.duration = 0.45
         current.append(flight)
         flight.completion = { [weak flight] in current.removeAll { $0 === flight } }
         flight.run()
@@ -165,7 +165,7 @@ final class CaptureFlight {
         }
         // The real card fades in underneath; this one fades out over it.
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.16
+            ctx.duration = 0.1
             window.animator().alphaValue = 0
         }, completionHandler: { [window] in
             MainActor.assumeIsolated { window.orderOut(nil) }

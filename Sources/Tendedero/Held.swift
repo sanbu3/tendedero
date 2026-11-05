@@ -127,10 +127,10 @@ final class Held: NSObject {
         panel.contentAspectRatio = natural
     }
 
-    private static let slideDuration: TimeInterval = 0.46
+    private static let slideDuration: TimeInterval = 0.32
     /// How much of it the fall takes on its own, and when the opening starts.
     private static let fallShare: CGFloat = 0.82
-    private static let openDelay: CGFloat = 0.16
+    private static let openDelay: CGFloat = 0.12
 
     private static func easeOutCubic(_ t: CGFloat) -> CGFloat {
         1 - pow(1 - t, 3)
