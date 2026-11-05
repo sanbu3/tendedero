@@ -263,23 +263,38 @@ final class Held: NSObject {
             releasePage()
             return
         }
-        let source = FileDragSource(url: url) { [weak self] in self?.endFileDrag() }
+        let source = FileDragSource(url: url) { [weak self] operation in self?.endFileDrag(operation) }
         dragSource = source
         let item = NSDraggingItem(pasteboardWriter: url as NSURL)
         item.setDraggingFrame(NSRect(origin: .zero, size: icon.size), contents: icon)
-        let session = view.beginDraggingSession(with: [item], event: event, source: source)
+        // Anchored on the pointer as it is now, not on where the button went
+        // down on the big photo: otherwise the page trails far behind.
+        let inWindow = panel.convertPoint(fromScreen: NSEvent.mouseLocation)
+        let anchor = NSEvent.mouseEvent(with: .leftMouseDown, location: inWindow,
+                                        modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                        windowNumber: panel.windowNumber, context: nil,
+                                        eventNumber: 0, clickCount: 1, pressure: 1) ?? event
+        let session = view.beginDraggingSession(with: [item], event: anchor, source: source)
         session.animatesToStartingPositionsOnCancelOrFail = false
         // The drag image carries the page now; the window steps aside without
         // leaving the screen, which would cancel the drag with it.
         panel.alphaValue = 0
     }
 
-    private func endFileDrag() {
+    /// Dropped somewhere: the photo has been shared, so it goes back to the
+    /// line, as if it had been dragged off it. Dropped nowhere: it is still
+    /// in the hand, and the photo comes back as it was.
+    private func endFileDrag(_ operation: NSDragOperation) {
         dragSource = nil
         guard fullFrame != nil else { return }
         panel.alphaValue = 1
         panel.orderFrontRegardless()
-        releasePage()
+        if operation != [] {
+            fullFrame = nil
+            hangBack()
+        } else {
+            releasePage()
+        }
     }
 
     /// Let go: the photo is back, the size it was.
@@ -926,9 +941,9 @@ private final class HeldView: NSVisualEffectView {
 /// The file being dragged by the pointer, until it is let go.
 private final class FileDragSource: NSObject, NSDraggingSource {
     let url: URL
-    private let onEnd: () -> Void
+    private let onEnd: (NSDragOperation) -> Void
 
-    init(url: URL, onEnd: @escaping () -> Void) {
+    init(url: URL, onEnd: @escaping (NSDragOperation) -> Void) {
         self.url = url
         self.onEnd = onEnd
     }
@@ -938,7 +953,7 @@ private final class FileDragSource: NSObject, NSDraggingSource {
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        onEnd()
+        onEnd(operation)
     }
 
     func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { false }
