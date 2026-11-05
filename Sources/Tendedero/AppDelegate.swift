@@ -117,10 +117,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Share.shared.clearAll()
         Trim.shared.onSaved = { [weak self] url in self?.line.reloadThumbnail(for: url) }
         panel.onScroll = { [weak self] event in
+            guard let self else { return }
+            // A pull down over a photo takes it into your hand: the wheel
+            // rolled towards you, or two fingers slid down the trackpad.
+            if let id = self.photo(under: NSEvent.mouseLocation), self.pulledDown(event) {
+                self.hold(id)
+                return
+            }
             // Sideways on a trackpad, or the wheel of a mouse.
             let delta = abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY)
                 ? event.scrollingDeltaX : event.scrollingDeltaY
-            self?.line.scroll(by: event.hasPreciseScrollingDeltas ? delta : delta * 12)
+            self.line.scroll(by: event.hasPreciseScrollingDeltas ? delta : delta * 12)
         }
         line.onFall = { [weak self] item in self?.fall(item) }
         line.onHold = { [weak self] id in self?.hold(id) }
@@ -674,6 +681,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             clickMonitors.append(local)
         }
     }
+    /// How far the wheel or two fingers have pulled down over a photo, and
+    /// when: a pull takes it into your hand, a small turn does nothing.
+    private var pullDown: CGFloat = 0
+    private var pullDownAt = Date.distantPast
+    private static let pullDownThreshold: CGFloat = 30
+    private static let pullDownWindow: TimeInterval = 0.4
+
+    /// Whether this scroll event pulls down far enough to take a photo off
+    /// the line. The sign is taken from the device, not the content, so a
+    /// wheel rolled towards you and two fingers slid down both count,
+    /// whichever way Natural Scrolling is set.
+    private func pulledDown(_ event: NSEvent) -> Bool {
+        guard event.momentumPhase.isEmpty else { return false }
+        let device = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaY : event.scrollingDeltaY
+        guard device < 0 else {
+            pullDown = 0
+            return false
+        }
+        let now = Date()
+        if now.timeIntervalSince(pullDownAt) > Self.pullDownWindow { pullDown = 0 }
+        pullDownAt = now
+        pullDown -= device
+        guard pullDown >= Self.pullDownThreshold else { return false }
+        pullDown = 0
+        return true
+    }
+
     /// How long the cursor is away before the line tucks back up.
     private static let retractDelay: TimeInterval = 0.5
 
@@ -794,8 +828,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// up, so it is out of the way of the photo you are looking at.
     private func hold(_ id: UUID) {
         guard let item = line.items.first(where: { $0.id == id && !$0.falling && !$0.held }) else { return }
+        // Where it hangs now: the photo slides down from there.
+        let from = cardFrame(for: id)
         line.setHeld(id, true)
-        Held.show(id, url: item.url, line: line) { [weak self] id, frame in self?.hangBack(id, from: frame) }
+        Held.show(id, url: item.url, line: line, from: from) { [weak self] id, frame in
+            self?.hangBack(id, from: frame)
+        }
     }
 
     /// Back onto its clip: the line comes down and the photo flies home.

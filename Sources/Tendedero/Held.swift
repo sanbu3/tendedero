@@ -5,10 +5,11 @@ import AppKit
 /// itself, not a copy: its clip waits empty on the line, and Hang back, or
 /// Escape, sends it home.
 ///
-/// It opens in the middle of the screen you are on, framed like a card.
-/// Drag it anywhere; stretch it from an edge or a corner, or pinch or scroll
-/// over it to zoom. Several can be held at
-/// once. It never takes the app you are working in out of the front.
+/// It slides off its clip, down to the middle of the screen you are on, and
+/// opens up as it lands, like a photo lifted from a real clothesline. Drag it
+/// anywhere; stretch it from an edge or a corner, or pinch or scroll over it
+/// to zoom. A double click hangs it back. Several can be held at once. It
+/// never takes the app you are working in out of the front.
 @MainActor
 final class Held: NSObject {
     private static var open: [UUID: Held] = [:]
@@ -18,18 +19,25 @@ final class Held: NSObject {
     private let view: HeldView
     /// Its size at 100%, in points.
     private let natural: NSSize
+    /// The frame-by-frame slide off the line, while it runs.
+    private var slideTimer: Timer?
+    private var animationStart: CFTimeInterval = 0
     /// Called with where it was on screen, to fly back to its clip from there.
     private let onHangBack: (UUID, CGRect) -> Void
 
     static var heldIDs: Set<UUID> { Set(open.keys) }
 
-    static func show(_ id: UUID, url: URL, line: Line, onHangBack: @escaping (UUID, CGRect) -> Void) {
+    /// `from` is where the card hangs on the line, so the photo can slide
+    /// off it; without it, the photo simply opens in the middle.
+    static func show(_ id: UUID, url: URL, line: Line, from: NSRect? = nil,
+                     onHangBack: @escaping (UUID, CGRect) -> Void) {
         guard open[id] == nil,
               let screen = LinePanel.screenUnderPointer() else { return }
         // No sharper than the screen can show, so a huge image stays light.
         let longest = max(screen.frame.width, screen.frame.height) * screen.backingScaleFactor
         guard let image = makeThumbnail(url, maxPixels: Int(longest)), image.size.width > 0 else { return }
-        open[id] = Held(id: id, url: url, image: image, on: screen, line: line, onHangBack: onHangBack)
+        open[id] = Held(id: id, url: url, image: image, on: screen, line: line,
+                        from: from, onHangBack: onHangBack)
     }
 
     static func hangBack(_ id: UUID) { open[id]?.hangBack() }
@@ -41,13 +49,15 @@ final class Held: NSObject {
     /// Its photo left the line some other way: the file moved, for example.
     static func forget(except live: Set<UUID>) {
         for (id, held) in open where !live.contains(id) {
+            held.slideTimer?.invalidate()
+            held.slideTimer = nil
             held.panel.close()
             open[id] = nil
         }
     }
 
     private init(id: UUID, url: URL, image: NSImage, on screen: NSScreen, line: Line,
-                 onHangBack: @escaping (UUID, CGRect) -> Void) {
+                 from: NSRect?, onHangBack: @escaping (UUID, CGRect) -> Void) {
         self.id = id
         self.onHangBack = onHangBack
         let scale = screen.backingScaleFactor
@@ -63,10 +73,65 @@ final class Held: NSObject {
         view.onMarkup = { line.markup(id) }
         view.onQuickLook = { line.quickLook(id) }
         // Stretched from an edge or a corner, it keeps the photo's shape.
-        panel.contentAspectRatio = natural
         panel.minSize = NSSize(width: 80, height: 80)
-        panel.setFrame(startFrame(on: screen), display: false)
+        let target = startFrame(on: screen)
+        panel.setFrame(from ?? target, display: false)
         panel.orderFrontRegardless()
+        if let from {
+            slideIn(from: from, to: target)
+        } else {
+            panel.contentAspectRatio = natural
+        }
+    }
+
+    /// Off the line: it falls away from its clip and opens up into the
+    /// middle of the screen, the two as one motion. The fall starts at once
+    /// and the opening joins it a beat later, so there is no seam where one
+    /// animation stops and the next begins. The card behind it fades to a
+    /// trace, so it looks like the photo that left the clip.
+    private func slideIn(from start: NSRect, to end: NSRect) {
+        animationStart = CACurrentMediaTime()
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated { self?.stepSlide(from: start, to: end, timer: timer) }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        slideTimer = timer
+    }
+
+    private func stepSlide(from start: NSRect, to end: NSRect, timer: Timer) {
+        let t = min(1, CGFloat((CACurrentMediaTime() - animationStart) / Self.slideDuration))
+        // The fall leads; the opening catches up and settles with a small
+        // overshoot, like a photo coming loose and opening in the hand.
+        let fall = Self.easeOutCubic(min(1, t / Self.fallShare))
+        let open = Self.easeOutBack(max(0, (t - Self.openDelay) / (1 - Self.openDelay)), overshoot: 0.7)
+        // It hangs from its top edge, so it grows out of the point it left.
+        let anchorX = start.midX + (end.midX - start.midX) * fall
+        let anchorTop = start.maxY + (end.maxY - start.maxY) * fall
+        let w = start.width + (end.width - start.width) * open
+        let h = start.height + (end.height - start.height) * open
+        panel.setFrame(NSRect(x: anchorX - w / 2, y: anchorTop - h, width: w, height: h), display: true)
+        guard t >= 1 else { return }
+        timer.invalidate()
+        slideTimer = nil
+        panel.setFrame(end, display: true)
+        // While it was opening, the frame had a shape of its own.
+        panel.contentAspectRatio = natural
+    }
+
+    private static let slideDuration: TimeInterval = 0.46
+    /// How much of it the fall takes on its own, and when the opening starts.
+    private static let fallShare: CGFloat = 0.82
+    private static let openDelay: CGFloat = 0.16
+
+    private static func easeOutCubic(_ t: CGFloat) -> CGFloat {
+        1 - pow(1 - t, 3)
+    }
+
+    /// Eases out with a small overshoot: the size passes the mark and settles.
+    private static func easeOutBack(_ t: CGFloat, overshoot: CGFloat) -> CGFloat {
+        let c = 1 + overshoot
+        let u = t - 1
+        return 1 + c * u * u * u + overshoot * u * u
     }
 
     /// In the middle of the screen, each new one a little lower and to the
@@ -96,6 +161,8 @@ final class Held: NSObject {
     }
 
     private func hangBack() {
+        slideTimer?.invalidate()
+        slideTimer = nil
         let frame = panel.frame
         panel.close()
         Self.open[id] = nil
@@ -200,6 +267,11 @@ private final class HeldView: NSVisualEffectView {
     override var mouseDownCanMoveWindow: Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        // A double click hands it back to the line.
+        if event.clickCount == 2 {
+            onHangBack()
+            return
+        }
         window?.makeKey()
         window?.makeFirstResponder(self)
         window?.performDrag(with: event)
